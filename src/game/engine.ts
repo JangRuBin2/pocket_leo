@@ -10,7 +10,7 @@ export interface Stats {
   energy: number;
 }
 export type Action = 'feed' | 'treat' | 'ball' | 'mom' | 'walk' | 'bath' | 'vet' | 'sleep';
-type Mode = 'idle' | 'feed' | 'treat' | 'zoom' | 'ball' | 'mom' | 'sulk' | 'walk' | 'bath' | 'vet' | 'sleep';
+type Mode = 'idle' | 'feed' | 'treat' | 'zoom' | 'ball' | 'mom' | 'sulk' | 'walk' | 'bath' | 'vet' | 'sleep' | 'angry';
 
 interface Part {
   kind: 'heart' | 'dust' | 'line' | 'crumb' | 'drop' | 'bubble';
@@ -273,7 +273,18 @@ export class Game {
     this.vel = { x: 0, y: 0 };
 
     if (this.mode === 'sleep') {
-      this.wake('레오가 깼어요');
+      // 자는데 깨우면 엄청 화내면서 물려고 한다
+      const leo = this.leo;
+      leo.squash.target = 1;
+      leo.happyT = 0;
+      this.mode = 'angry';
+      this.modeT = 2.8;
+      this.tickT = 0.35;
+      this.sound.growl();
+      buzz(120);
+      leo.boop(1.2);
+      this.say('으르르르!!', leo.x, this.gy - 215, 30, '#b3261e');
+      this.onToast('자는데 깨워서 엄청 화났어요. 물려요, 도망쳐요!');
       return;
     }
     if (this.mode === 'walk' && Math.hypot(p.x - this.handle.x, p.y - this.handle.y) < 50) {
@@ -458,6 +469,12 @@ export class Game {
   }
 
   private poke() {
+    if (this.mode === 'angry') {
+      this.say('앙!', this.leo.x, this.gy - 200, 34, '#b3261e');
+      this.sound.bark(0.85);
+      buzz(150);
+      return;
+    }
     if (this.mode === 'sulk') {
       this.say('흥', this.leo.x, this.gy - 190, 24, INK);
       return;
@@ -1125,6 +1142,35 @@ export class Game {
           this.say('z', leo.x + 45, g - 190, 26, '#6f6a8a');
         }
         if (this.stats.energy >= 100) this.wake('푹 자고 일어났어요');
+        break;
+      }
+      case 'angry': {
+        this.modeT -= dt;
+        this.tickT -= dt;
+        leo.eye = 'angry';
+        leo.pant = false;
+        leo.tailAmp.target = 0.02;
+        leo.tremble = 0.8;
+        if (this.tickT <= 0) {
+          // 손가락 쪽으로 달려들며 앙앙
+          this.tickT = 0.3;
+          const tx = this.ptr ? this.ptr.x : leo.x + rand(-90, 90);
+          leo.goTo(clamp(tx, 50, W - 60), undefined, 460);
+          leo.jump(-230);
+          leo.barkPose();
+          this.sound.bark(rand(0.78, 0.9));
+          if (Math.random() < 0.4) this.sound.growl();
+          buzz(30);
+          this.say(Math.random() < 0.5 ? '왁!!' : '앙!', leo.x + rand(-50, 50), g - rand(180, 225), rand(26, 34), '#b3261e');
+        }
+        if (this.modeT <= 0) {
+          leo.targetX = null;
+          leo.back = true;
+          this.mode = 'sulk';
+          this.modeT = 3.5;
+          this.onToast('화 풀릴 때까지 등 돌리고 있대요');
+          this.bump({ mood: -12 });
+        }
         break;
       }
       case 'sulk': {

@@ -12,7 +12,7 @@ const INK = '#2a2622';
 const PINK = '#ee8a8a';
 
 export const LEO_SCALE = 1.12;
-export type EyeMode = 'open' | 'happy' | 'squint';
+export type EyeMode = 'open' | 'happy' | 'squint' | 'angry';
 
 /** 레오: 살구색 곰돌이 얼굴, 크림색 가슴털, 등 위로 말린 흰 솜뭉치 꼬리 */
 export class Leo {
@@ -208,6 +208,17 @@ export class Leo {
       ctx.beginPath();
       ctx.ellipse(0, 23 + 3 * m, 5.5, 2 + 5 * m, 0, 0, Math.PI * 2);
       ctx.fill();
+      if (this.eye === 'angry' && this.happyT <= 0) {
+        // 이빨
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        for (const tx of [-6, -2, 2, 6]) {
+          ctx.moveTo(tx - 2, 20 - 5 * m);
+          ctx.lineTo(tx, 25 - 5 * m);
+          ctx.lineTo(tx + 2, 20 - 5 * m);
+        }
+        ctx.fill();
+      }
     } else {
       c.line([[-8, 17], [-4, 20], [0, 17.5], [4, 20], [8, 17]], INK, 1.8, 30, 0.6);
     }
@@ -238,6 +249,7 @@ export class Leo {
         ctx.beginPath();
         ctx.arc(ex - 2 + lx * 0.2, ey - 2.2, 2, 0, Math.PI * 2);
         ctx.fill();
+        if (mode === 'angry') c.line([[ex + sgn * 9, ey - 15], [ex - sgn * 8, ey - 6]], INK, 3.4, 44 + sgn, 0.6);
       }
     }
   }
