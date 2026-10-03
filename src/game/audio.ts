@@ -348,6 +348,13 @@ export class Sound {
     this.hit(this.now(), 0.16, 0.05, 4200, 'highpass', this.sfx);
   }
 
+  fanfare() {
+    if (!this.ctx) return;
+    const t = this.now();
+    [65, 69, 72, 77, 81, 84].forEach((m, i) => this.tone(mtof(m), t + i * 0.11, 0.7, 0.12, 'triangle', this.sfx, 0.4));
+    [77, 81, 84, 89].forEach((m) => this.tone(mtof(m), t + 0.72, 1.8, 0.09, 'sine', this.sfx, 0.5));
+  }
+
   dryer() {
     if (!this.ctx) return;
     this.hit(this.now(), 0.18, 0.07, 900, 'bandpass', this.sfx);

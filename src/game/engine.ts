@@ -10,7 +10,7 @@ export interface Stats {
   energy: number;
 }
 export type Action = 'feed' | 'treat' | 'ball' | 'mom' | 'walk' | 'bath' | 'vet' | 'sleep';
-type Mode = 'idle' | 'feed' | 'treat' | 'zoom' | 'ball' | 'mom' | 'sulk' | 'walk' | 'bath' | 'vet' | 'sleep' | 'angry';
+type Mode = 'idle' | 'feed' | 'treat' | 'zoom' | 'ball' | 'mom' | 'sulk' | 'walk' | 'bath' | 'vet' | 'sleep' | 'angry' | 'cake';
 
 interface Part {
   kind: 'heart' | 'dust' | 'line' | 'crumb' | 'drop' | 'bubble';
@@ -39,6 +39,8 @@ interface P {
 const SAVE_KEY = 'pocket-leo-v1';
 const W = 390;
 const INK = '#2a2622';
+const CAKE_X = 236;
+const CAKE_W = [128, 106, 84];
 
 export class Game {
   ctx: CanvasRenderingContext2D;
@@ -92,6 +94,20 @@ export class Game {
   private walkPoop: number | null = null;
   private handle = { x: 0, y: 0, held: false };
   private wet: number[] = [];
+  level = 1;
+  xp = 0;
+  onProgress: (level: number, xp: number, need: number) => void = () => {};
+  onLevelUp: (level: number) => void = () => {};
+  private pendingEvent = false;
+  private cake = {
+    layers: [] as number[],
+    mx: 0,
+    fall: null as number | null,
+    acc: 0,
+    cream: 0,
+    lit: false,
+    tops: [] as { kind: number; x: number; y: number; hx: number; hy: number; placed: boolean; held: boolean }[],
+  };
   private tool: { kind: 'steth' | 'syringe'; x: number; y: number; held: boolean } | null = null;
   private ro: ResizeObserver;
 
@@ -138,7 +154,9 @@ export class Game {
     try {
       const raw = localStorage.getItem(SAVE_KEY);
       if (!raw) return;
-      const d = JSON.parse(raw) as { stats: Stats; ts: number; poops: number };
+      const d = JSON.parse(raw) as { stats: Stats; ts: number; poops: number; level?: number; xp?: number };
+      this.level = d.level ?? 1;
+      this.xp = d.xp ?? 0;
       const sec = clamp((Date.now() - d.ts) / 1000, 0, 3600 * 48);
       this.stats = d.stats;
       this.poops = Array.from({ length: Math.min(d.poops || 0, 3) }, () => rand(60, W - 110));
@@ -150,7 +168,7 @@ export class Game {
 
   private save() {
     try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify({ stats: this.stats, ts: Date.now(), poops: this.poops.length }));
+      localStorage.setItem(SAVE_KEY, JSON.stringify({ stats: this.stats, ts: Date.now(), poops: this.poops.length, level: this.level, xp: this.xp }));
     } catch {
       /* 무시 */
     }
@@ -168,6 +186,23 @@ export class Game {
     s.clean = drop(s.clean, d.clean, 1 + this.poops.length * 2);
     if (this.mode !== 'sleep') s.energy = drop(s.energy, d.energy);
     this.clampStats();
+  }
+
+  /** 다음 레벨까지 필요한 경험치 */
+  need(level = this.level) {
+    return 30 + (level - 1) * 25;
+  }
+
+  private gainXp(n: number) {
+    this.xp += n;
+    this.say(`+${n} 경험치`, this.leo.x, this.gy - 250, 20, '#6b8f5a');
+    while (this.xp >= this.need()) {
+      this.xp -= this.need();
+      this.level++;
+      this.pendingEvent = true;
+    }
+    this.onProgress(this.level, this.xp, this.need());
+    this.save();
   }
 
   private clampStats() {
@@ -277,6 +312,10 @@ export class Game {
     this.ptr = { ...p, sx: p.x, sy: p.y, moved: 0, t: this.t, onLeo: false };
     this.vel = { x: 0, y: 0 };
 
+    if (this.mode === 'cake') {
+      this.cakeDown(p);
+      return;
+    }
     if (this.mode === 'sleep') {
       // 자는데 깨우면 엄청 화내면서 물려고 한다
       const leo = this.leo;
@@ -327,6 +366,7 @@ export class Game {
       for (let i = 0; i < 8; i++) this.emit('dust', x, this.gy - 12, rand(-90, 90), rand(-140, -30), 0.6);
       this.say('깔끔!', x, this.gy - 50, 22, '#6b8f5a');
       this.bump({ clean: 8, mood: 2 });
+          this.gainXp(4);
       return;
     }
     if (this.hitLeo(p)) {
@@ -347,6 +387,25 @@ export class Game {
     this.ptr.x = p.x;
     this.ptr.y = p.y;
 
+    if (this.mode === 'cake') {
+      const ck = this.cake;
+      const g = this.gy;
+      if (this.sub === 1 && Math.abs(p.x - CAKE_X) < 95 && p.y > g - 150 && p.y < g - 25) {
+        ck.cream = Math.min(1, ck.cream + dist / 1500);
+        this.petDist += dist;
+        if (this.petDist > 30) {
+          this.petDist = 0;
+          this.sound.bubble();
+          buzz(5);
+        }
+      }
+      const held = ck.tops.find((o) => o.held);
+      if (held) {
+        held.x = p.x;
+        held.y = p.y;
+      }
+      return;
+    }
     if (this.handle.held) {
       this.handle.x = clamp(p.x, 30, W - 20);
       this.handle.y = clamp(p.y, this.gy - 260, this.gy - 40);
@@ -388,6 +447,26 @@ export class Game {
     const ptr = this.ptr;
     this.ptr = null;
     if (!ptr) return;
+    if (this.mode === 'cake') {
+      const ck = this.cake;
+      const held = ck.tops.find((o) => o.held);
+      if (held) {
+        held.held = false;
+        const topX = ck.layers[2] ?? CAKE_X;
+        const topY = this.gy - 34 - 90;
+        if (Math.abs(held.x - topX) < 46 && held.y > topY - 60 && held.y < topY + 25) {
+          held.placed = true;
+          held.y = topY - 7;
+          this.sound.pop();
+          buzz(12);
+          this.leo.boop(0.4);
+        } else {
+          held.x = held.hx;
+          held.y = held.hy;
+        }
+      }
+      return;
+    }
     if (this.handle.held) {
       this.handle.held = false;
       return;
@@ -470,6 +549,7 @@ export class Game {
       this.sound.jingle();
       buzz(40);
       this.bump({ mood: 5 });
+          this.gainXp(3);
     }
   }
 
@@ -646,15 +726,205 @@ export class Game {
     ctx.closePath();
   }
 
+  // ---------- 이벤트 미니게임: 레오 생일 케이크 ----------
+  startCake() {
+    if (this.mode !== 'idle') return;
+    const leo = this.leo;
+    this.mode = 'cake';
+    this.sub = 0;
+    this.barksLeft = 0;
+    leo.x = 62;
+    leo.dir = 1;
+    leo.targetX = null;
+    const ty = this.gy - 290;
+    this.cake = {
+      layers: [],
+      mx: CAKE_X,
+      fall: null,
+      acc: 0,
+      cream: 0,
+      lit: false,
+      tops: [0, 0, 1, 2].map((kind, i) => ({ kind, x: 160 + i * 52, y: ty, hx: 160 + i * 52, hy: ty, placed: false, held: false })),
+    };
+    this.sound.jingle();
+    this.onToast('레오 생일이에요! 강아지 케이크를 만들어요');
+  }
+
+  private cakeDown(p: P) {
+    const ck = this.cake;
+    if (this.sub === 0) {
+      if (ck.fall === null) {
+        ck.fall = this.gy - 34 - (ck.layers.length + 1) * 30 - 110;
+        this.sound.whoosh();
+      }
+    } else if (this.sub === 2) {
+      const o = ck.tops.find((t) => !t.placed && Math.hypot(p.x - t.x, p.y - t.y) < 34);
+      if (o) o.held = true;
+    } else if (this.sub === 3) {
+      ck.lit = true;
+      this.sub = 4;
+      this.modeT = 0;
+      this.tickT = 0;
+      this.leo.hat = true;
+      this.leo.happy(5);
+      this.sound.fanfare();
+      buzz(80);
+      this.say('생일 축하해 레오!', W / 2, this.gy - 300, 34, '#d1483a');
+    }
+  }
+
+  private updateCake(dt: number) {
+    const ck = this.cake;
+    const leo = this.leo;
+    const g = this.gy;
+    leo.pant = true;
+    if (this.sub === 0) {
+      const i = ck.layers.length;
+      if (ck.fall === null) ck.mx = CAKE_X + Math.sin(this.t * (2.2 + i * 0.7)) * 100;
+      else {
+        ck.fall += dt * 900;
+        const land = g - 34 - (i + 1) * 30;
+        if (ck.fall >= land) {
+          ck.fall = null;
+          const off = ck.mx - (i ? ck.layers[i - 1] : CAKE_X);
+          if (Math.abs(off) > CAKE_W[i] * 0.55) {
+            this.sound.boing();
+            this.say('앗! 다시', ck.mx, land - 20, 24, INK);
+          } else {
+            ck.layers.push(ck.mx);
+            ck.acc += 1 - Math.min(1, Math.abs(off) / 55);
+            this.sound.pop();
+            buzz(20);
+            leo.boop(0.6);
+            this.say(Math.abs(off) < 12 ? '딱!' : '오케이', ck.mx, land - 20, 24, '#6b8f5a');
+            if (ck.layers.length === 3) {
+              this.sub = 1;
+              this.onToast('시트 완성! 문질러서 크림을 발라주세요');
+            }
+          }
+        }
+      }
+    } else if (this.sub === 1) {
+      if (ck.cream >= 1) {
+        this.sub = 2;
+        this.sound.jingle();
+        this.onToast('토핑을 끌어다 케이크 위에 올려주세요');
+      }
+    } else if (this.sub === 2) {
+      if (ck.tops.every((o) => o.placed)) {
+        this.sub = 3;
+        this.sound.jingle();
+        this.onToast('마지막! 화면을 눌러 초에 불을 붙여주세요');
+      }
+    } else if (this.sub === 4) {
+      this.modeT += dt;
+      this.tickT -= dt;
+      if (this.tickT <= 0) {
+        this.tickT = 0.45;
+        leo.jump(-340);
+        if (this.modeT < 2.4) this.bark();
+        for (let k = 0; k < 3; k++) this.emit('heart', rand(40, W - 40), g - rand(120, 300), rand(-40, 40), rand(-110, -50), 1.3);
+      }
+      if (this.modeT > 4) {
+        const stars = ck.acc > 2.25 ? 3 : ck.acc > 1.35 ? 2 : 1;
+        leo.hat = false;
+        leo.x = 120;
+        this.endScene(`케이크 완성! ${'★'.repeat(stars)}${'☆'.repeat(3 - stars)} 레오가 신나게 먹었어요`, { mood: 40, hunger: 25 }, 0);
+      }
+    }
+  }
+
+  private drawCake() {
+    const ctx = this.ctx;
+    const c = this.crayon;
+    const ck = this.cake;
+    const g = this.gy;
+    // 상
+    c.rect(CAKE_X - 112, g - 34, 224, 12, '#9a6a3c', 400, '#e2c08e');
+    c.line([[CAKE_X - 92, g - 22], [CAKE_X - 98, g + 12]], '#9a6a3c', 2.6, 401);
+    c.line([[CAKE_X + 92, g - 22], [CAKE_X + 98, g + 12]], '#9a6a3c', 2.6, 402);
+    const layer = (x: number, y: number, i: number) => {
+      const w = CAKE_W[i];
+      ctx.fillStyle = '#f3d9a4';
+      ctx.fillRect(x - w / 2, y, w, 30);
+      c.rect(x - w / 2, y, w, 30, '#b07a3a', 410 + i, '#e8b96a');
+      if (ck.cream > 0) {
+        ctx.save();
+        ctx.globalAlpha = ck.cream;
+        ctx.fillStyle = '#fffaf0';
+        ctx.fillRect(x - w / 2 - 3, y - 4, w + 6, 13);
+        for (let k = 0; k < 5; k++) {
+          ctx.beginPath();
+          ctx.ellipse(x - w / 2 + 8 + (k * (w - 16)) / 4, y + 9, 6, 4 + ((k * 7 + i * 3) % 5), 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+        if (ck.cream > 0.5) c.line([[x - w / 2 - 3, y - 4], [x + w / 2 + 3, y - 4]], '#d9c9ae', 1.6, 420 + i, 1);
+      }
+    };
+    ck.layers.forEach((x, i) => layer(x, g - 34 - (i + 1) * 30, i));
+    if (this.sub === 0 && ck.layers.length < 3) {
+      const i = ck.layers.length;
+      layer(ck.mx, ck.fall ?? g - 34 - (i + 1) * 30 - 110, i);
+    }
+    const topX = ck.layers[2] ?? CAKE_X;
+    const topY = g - 34 - 90;
+    if (this.sub >= 3) {
+      c.rect(topX - 3, topY - 34, 6, 30, '#3f7fb5', 430, '#9cc3e2');
+      if (ck.lit) {
+        const f = Math.sin(this.t * 18) * 1.5;
+        c.blob(topX + f * 0.4, topY - 44, 6, 10 + f, { fill: '#f2c84b', edge: '#e2714c', seed: 431 });
+      }
+    }
+    if (this.sub >= 2) {
+      for (const o of ck.tops) {
+        ctx.save();
+        ctx.translate(o.x, o.y + (o.placed || o.held ? 0 : Math.sin(this.t * 3 + o.hx) * 3));
+        if (o.kind === 0) {
+          c.blob(0, 0, 10, 12, { fill: '#e2574c', edge: '#a8322a', seed: 440 });
+          c.blob(0, -11, 7, 3.5, { fill: '#7fa35a', seed: 441 });
+        } else if (o.kind === 1) {
+          c.blob(0, 0, 9, 9, { fill: '#5b6fb5', edge: '#34407a', seed: 442 });
+        } else {
+          ctx.scale(0.62, 0.62);
+          ctx.beginPath();
+          ctx.moveTo(0, 15);
+          ctx.bezierCurveTo(-27, -4, -15, -24, 0, -9);
+          ctx.bezierCurveTo(15, -24, 27, -4, 0, 15);
+          ctx.fillStyle = '#a8703c';
+          ctx.fill();
+          ctx.strokeStyle = '#6b3f1c';
+          ctx.lineWidth = 2.6;
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+    }
+    const guide = [
+      '시트가 가운데 올 때 화면을 눌러 쌓아요',
+      '케이크를 문질러 크림을 발라요',
+      '딸기, 블루베리, 쌩쌩이를 케이크 위로 끌어요',
+      '화면을 눌러 초에 불을 붙여요',
+      '',
+    ][this.sub];
+    ctx.save();
+    ctx.font = '400 16px Gaegu, "Comic Sans MS", cursive';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#8c8272';
+    ctx.fillText(guide ?? '', W / 2, g + 56);
+    ctx.restore();
+  }
+
   private wake(msg: string) {
     this.leo.squash.target = 1;
     this.leo.boop(0.8);
     this.mode = 'idle';
     this.idleT = 3;
     this.onToast(msg);
+    this.gainXp(10);
   }
 
-  private endScene(msg: string, d: Partial<Stats>) {
+  private endScene(msg: string, d: Partial<Stats>, xp = 20) {
     const leo = this.leo;
     leo.treadmill = false;
     leo.tremble = 0;
@@ -672,6 +942,7 @@ export class Game {
     this.sound.jingle();
     this.onToast(msg);
     this.bump(d);
+    this.gainXp(xp);
   }
 
   private bark() {
@@ -693,6 +964,7 @@ export class Game {
     this.say('쌩쌩!!', this.leo.x, this.gy - 210, 34, '#d1483a');
     buzz(50);
     this.bump({ energy: 35, hunger: 8, mood: 12 });
+          this.gainXp(8);
   }
 
   private emit(kind: Part['kind'], x: number, y: number, vx: number, vy: number, life: number) {
@@ -754,7 +1026,8 @@ export class Game {
 
     // 시선
     let look: P | null = null;
-    if (this.treat) look = this.treat;
+    if (this.mode === 'cake') look = { x: this.cake.mx, y: this.gy - 130 };
+    else if (this.treat) look = this.treat;
     else if (this.ball) look = this.ball;
     else if (this.ptr) look = this.ptr;
     if (look && !this.eating) {
@@ -766,7 +1039,16 @@ export class Game {
     }
 
     switch (this.mode) {
+      case 'cake': {
+        this.updateCake(dt);
+        break;
+      }
       case 'idle': {
+        if (this.pendingEvent && leo.jumpY === 0) {
+          this.pendingEvent = false;
+          this.sound.fanfare();
+          this.onLevelUp(this.level);
+        }
         if (this.barksLeft > 0) {
           this.barkT -= dt;
           if (this.barkT <= 0) {
@@ -816,6 +1098,7 @@ export class Game {
           this.poopAt = this.t + 30;
           this.onToast('싹싹 비웠어요');
           this.bump({ hunger: 45, mood: 6 });
+          this.gainXp(10);
         }
         break;
       }
@@ -898,6 +1181,7 @@ export class Game {
           this.mode = 'idle';
           this.idleT = 3;
           this.bump({ mood: 14, energy: -8, hunger: -3 });
+          this.gainXp(10);
         }
         break;
       }
@@ -943,6 +1227,7 @@ export class Game {
           this.idleT = 3;
           this.onToast('엄마가 세상에서 제일 좋대요. 약았다 약았어');
           this.bump({ mood: 30 });
+          this.gainXp(6);
         }
         break;
       }
@@ -1058,7 +1343,7 @@ export class Game {
         } else if (this.sub === 5) {
           this.dist += dt * 4;
           this.scroll += dt * 110;
-          if (this.dist >= 100) this.endScene('산책 끝! 마지막엔 안겨서 왔어요', { mood: 25, energy: -20, clean: -10, hunger: -8 });
+          if (this.dist >= 100) this.endScene('산책 끝! 마지막엔 안겨서 왔어요', { mood: 25, energy: -20, clean: -10, hunger: -8 }, 25);
         }
         if (this.sub === 0) {
           const poop = (msg: string) => {
@@ -1221,7 +1506,7 @@ export class Game {
       ctx.restore();
     }
 
-    for (const x of this.mode === 'walk' || this.mode === 'vet' ? [] : this.poops) {
+    for (const x of this.mode === 'walk' || this.mode === 'vet' || this.mode === 'cake' ? [] : this.poops) {
       c.blob(x, g - 6, 15, 7, { fill: '#8a5a33', edge: '#5e3b1e', seed: 200 });
       c.blob(x, g - 15, 10.5, 6, { fill: '#8a5a33', edge: '#5e3b1e', seed: 201 });
       c.blob(x + 1, g - 23, 5.5, 4.5, { fill: '#8a5a33', edge: '#5e3b1e', seed: 202 });
@@ -1264,6 +1549,7 @@ export class Game {
     }
 
     this.drawSceneProps();
+    if (this.mode === 'cake') this.drawCake();
 
     const tr = this.treat;
     if (tr) {
@@ -1407,7 +1693,7 @@ export class Game {
     ctx.font = '700 22px Gaegu, "Comic Sans MS", cursive';
     ctx.textAlign = 'center';
     ctx.fillStyle = INK;
-    ctx.fillText(`산책 ${Math.min(100, Math.floor(this.dist))}%`, W / 2, 172);
+    ctx.fillText(`산책 ${Math.min(100, Math.floor(this.dist))}%`, W / 2, 196);
     const guide = [
       '줄 손잡이를 오른쪽으로 끌면 레오가 따라와요',
       '레오가 냄새 맡는 중',

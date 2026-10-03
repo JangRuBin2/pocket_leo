@@ -49,6 +49,7 @@ export class Leo {
   treadmill = false;
   tremble = 0;
   harness = false;
+  hat = false;
   lift = new Spring(0, 110, 12);
   private prevY = 0;
 
@@ -194,6 +195,23 @@ export class Leo {
     c.blob(-27, -29, 11, 15, { fill: DEEP, seed: 8, fur: 0.25, rot: -0.4 });
     c.blob(27, -29, 11, 15, { fill: DEEP, seed: 9, fur: 0.25, rot: 0.4 });
     c.blob(0, 0, 43, 38, { fill: ORANGE, edge: DEEP, seed: 10, fur: 0.3 });
+    if (this.hat) {
+      // 생일 고깔모자
+      ctx.fillStyle = '#ee8a8a';
+      ctx.strokeStyle = '#c9566a';
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(-17, -30);
+      ctx.lineTo(4, -78);
+      ctx.lineTo(19, -28);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      c.line([[-9, -46], [13, -44]], '#fbf3de', 3, 70, 0.8);
+      c.line([[-3, -60], [9, -59]], '#fbf3de', 3, 71, 0.8);
+      c.blob(4, -80, 6, 6, { fill: '#f2c84b', seed: 72, fur: 0.5 });
+    }
     if (back) return;
     const lx = this.headX.x * 0.2;
     c.blob(0, 13, 17, 13, { fill: MUZZLE, seed: 11, fur: 0.22 });

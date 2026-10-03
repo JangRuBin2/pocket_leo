@@ -98,6 +98,8 @@ export default function App() {
   const [toast, setToast] = useState('');
   const [started, setStarted] = useState(false);
   const [muted, setMuted] = useState(false);
+  const [prog, setProg] = useState({ level: 1, xp: 0, need: 30 });
+  const [event, setEvent] = useState(0);
 
   useEffect(() => {
     const g = new Game(canvas.current!);
@@ -107,8 +109,11 @@ export default function App() {
       clearTimeout(timer.current);
       timer.current = window.setTimeout(() => setToast(''), 2800);
     };
+    g.onProgress = (level, xp, need) => setProg({ level, xp, need });
+    g.onLevelUp = (level) => setEvent(level);
     game.current = g;
     setStats({ ...g.stats });
+    setProg({ level: g.level, xp: g.xp, need: g.need() });
     return () => {
       clearTimeout(timer.current);
       g.destroy();
@@ -144,6 +149,15 @@ export default function App() {
               </span>
             </div>
           ))}
+          <div className="level">
+            <span className="level-chip">Lv.{prog.level}</span>
+            <span className="meter-track">
+              <span className="meter-fill" style={{ width: `${Math.round((prog.xp / prog.need) * 100)}%`, background: 'var(--yellow)' }} />
+            </span>
+            <span className="level-num">
+              {Math.floor(prog.xp)}/{prog.need}
+            </span>
+          </div>
         </div>
         <button id="mute" className="mute" onClick={toggleMute} aria-pressed={muted}>
           {muted ? '소리 꺼짐' : '소리 켜짐'}
@@ -166,6 +180,31 @@ export default function App() {
           ))}
         </div>
       </footer>
+
+      {event > 0 && (
+        <div className="intro event">
+          <p className="event-eyebrow">레벨 업!</p>
+          <h1>Lv.{event}</h1>
+          <p>
+            이벤트 미니게임이 열렸어요
+            <br />
+            <b>레오 생일 케이크 만들기</b>
+          </p>
+          <button
+            id="event-start"
+            className="start"
+            onClick={() => {
+              setEvent(0);
+              game.current?.startCake();
+            }}
+          >
+            케이크 만들러 가기
+          </button>
+          <button id="event-later" className="later" onClick={() => setEvent(0)}>
+            이번엔 건너뛰기
+          </button>
+        </div>
+      )}
 
       {!started && (
         <div className="intro">
