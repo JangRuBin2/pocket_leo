@@ -48,6 +48,8 @@ export class Leo {
   belly = false;
   treadmill = false;
   tremble = 0;
+  harness = false;
+  lift = new Spring(0, 110, 12);
   private prevY = 0;
 
   goTo(x: number, cb?: () => void, speed = 120) {
@@ -117,7 +119,7 @@ export class Leo {
     this.prevY = y;
     this.fur.target = clamp(-dy * 0.03, -9, 9);
 
-    for (const s of [this.squash, this.headX, this.headY, this.tilt, this.fur, this.mouth, this.tailAmp]) s.step(dt);
+    for (const s of [this.squash, this.headX, this.headY, this.tilt, this.fur, this.mouth, this.tailAmp, this.lift]) s.step(dt);
     this.squash.x = clamp(this.squash.x, 0.6, 1.4);
 
     this.tailPhase += dt * this.tailSpeed;
@@ -146,7 +148,7 @@ export class Leo {
     const kickX = this.kick > 0 ? Math.sin(this.t * 55) * 7 : 0;
 
     ctx.save();
-    ctx.translate(this.x + Math.sin(this.t * 62) * this.tremble * 2.2, groundY + this.jumpY + this.hopY);
+    ctx.translate(this.x + Math.sin(this.t * 62) * this.tremble * 2.2, groundY + this.jumpY + this.hopY + this.lift.x);
     if (this.belly) {
       ctx.scale(S, S);
       this.drawBelly(c);
@@ -173,6 +175,12 @@ export class Leo {
     c.blob(19, -15 - Math.max(0, -lp), 11, 17, { fill: APRICOT, edge: TAN, seed: 6, fur: 0.12 });
     if (back) tail(0);
     else c.blob(0, -74 + lag, 39, 33, { fill: WHITE, seed: 7, fur: 0.42 });
+    if (this.harness) {
+      // 빨간 천 하네스
+      c.blob(0, -74, 38, 6.5, { fill: '#d1483a', edge: '#9c2f25', seed: 60, hatch: 0.3 });
+      if (!back) c.blob(0, -90, 7, 15, { fill: '#d1483a', edge: '#9c2f25', seed: 61, hatch: 0.3 });
+      c.blob(back ? 0 : 20, -96, 5, 5, { fill: '#b9b4ac', edge: '#4a4640', seed: 62 });
+    }
 
     ctx.save();
     ctx.translate(this.headX.x, -128 + this.headY.x + lag * 0.4);

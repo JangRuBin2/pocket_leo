@@ -90,6 +90,8 @@ export class Game {
   private otherX = W + 80;
   private other = 0;
   private walkPoop: number | null = null;
+  private handle = { x: 0, y: 0, held: false };
+  private wet: number[] = [];
   private tool: { kind: 'steth' | 'syringe'; x: number; y: number; held: boolean } | null = null;
   private ro: ResizeObserver;
 
@@ -274,6 +276,10 @@ export class Game {
       this.wake('레오가 깼어요');
       return;
     }
+    if (this.mode === 'walk' && Math.hypot(p.x - this.handle.x, p.y - this.handle.y) < 50) {
+      this.handle.held = true;
+      return;
+    }
     if (this.tool && Math.hypot(p.x - this.tool.x, p.y - this.tool.y) < 52) {
       this.tool.held = true;
       return;
@@ -325,6 +331,25 @@ export class Game {
     this.ptr.x = p.x;
     this.ptr.y = p.y;
 
+    if (this.handle.held) {
+      this.handle.x = clamp(p.x, 30, W - 20);
+      this.handle.y = clamp(p.y, this.gy - 260, this.gy - 40);
+      return;
+    }
+    if (this.mode === 'walk' && this.sub === 4 && this.ptr.onLeo && this.ptr.sy - p.y > 50) {
+      // 안아주기
+      const leo = this.leo;
+      this.sub = 5;
+      leo.lift.target = -64;
+      leo.squash.target = 1;
+      leo.happy(5);
+      this.sound.jingle();
+      buzz(40);
+      this.say('헤헤', leo.x, this.gy - 250, 28, '#d1483a');
+      for (let i = 0; i < 5; i++) this.emit('heart', leo.x + rand(-40, 40), this.gy - 180, rand(-40, 40), rand(-110, -60), 1.2);
+      this.onToast('결국 안겨서 가요. 약았다 약았어');
+      return;
+    }
     if (this.tool?.held) {
       this.tool.x = p.x;
       this.tool.y = p.y;
@@ -347,6 +372,10 @@ export class Game {
     const ptr = this.ptr;
     this.ptr = null;
     if (!ptr) return;
+    if (this.handle.held) {
+      this.handle.held = false;
+      return;
+    }
     if (this.tool?.held) {
       this.tool.held = false;
       return;
@@ -483,8 +512,10 @@ export class Game {
       leo.dir = 1;
       leo.targetX = null;
       leo.happy(2);
+      leo.harness = true;
+      this.handle = { x: leo.x + 105, y: this.gy - 150, held: false };
       this.sound.jingle();
-      this.onToast('화면을 꾹 누르고 있으면 걸어요');
+      this.onToast('하네스 채우고 산책 출발');
       return;
     }
     if (kind === 'bath') {
@@ -562,6 +593,37 @@ export class Game {
     }
   }
 
+  /** 말려야 하는 부위: 머리, 가슴, 옆구리, 꼬리, 발 */
+  private zones(): P[] {
+    const S = LEO_SCALE;
+    const x = this.leo.x;
+    const g = this.gy;
+    return [
+      { x, y: g - 128 * S },
+      { x, y: g - 76 * S },
+      { x: x - 42 * S, y: g - 56 * S },
+      { x: x + 46 * S, y: g - 106 * S },
+      { x, y: g - 14 * S },
+    ];
+  }
+
+  private tubPath(front: boolean) {
+    const ctx = this.ctx;
+    const x = this.leo.x;
+    const y = this.gy - 62;
+    ctx.beginPath();
+    if (!front) {
+      ctx.ellipse(x, y, 108, 16, 0, 0, Math.PI * 2);
+      return;
+    }
+    ctx.moveTo(x - 108, y);
+    ctx.ellipse(x, y, 108, 16, 0, Math.PI, 0, true);
+    ctx.bezierCurveTo(x + 104, y + 60, x + 84, y + 78, x + 60, y + 78);
+    ctx.lineTo(x - 60, y + 78);
+    ctx.bezierCurveTo(x - 84, y + 78, x - 104, y + 60, x - 108, y);
+    ctx.closePath();
+  }
+
   private wake(msg: string) {
     this.leo.squash.target = 1;
     this.leo.boop(0.8);
@@ -574,6 +636,10 @@ export class Game {
     const leo = this.leo;
     leo.treadmill = false;
     leo.tremble = 0;
+    leo.harness = false;
+    leo.lift.target = 0;
+    leo.squash.target = 1;
+    this.handle.held = false;
     this.tool = null;
     this.walkPoop = null;
     this.mode = 'idle';
@@ -882,25 +948,64 @@ export class Game {
             this.say('탈탈탈!', leo.x, g - 215, 28, '#3f7fb5');
             buzz(120);
           }
-        } else {
+        } else if (this.sub === 2) {
           this.modeT -= dt;
           leo.tremble = 4;
           for (let i = 0; i < 2; i++)
             this.emit('drop', leo.x + rand(-30, 30), g - rand(60, 160), rand(-260, 260), rand(-200, -40), 0.6);
           if (this.modeT <= 0) {
+            this.sub = 3;
+            this.wet = [1, 1, 1, 1, 1];
+            this.onToast('드라이기로 물방울 있는 곳을 구석구석 말려주세요');
+          }
+        } else {
+          // 털 말리기: 부위 5곳을 전부 말려야 끝
+          leo.eye = 'open';
+          if (this.ptr) {
+            this.tickT -= dt;
+            if (this.tickT <= 0) {
+              this.tickT = 0.14;
+              this.sound.dryer();
+            }
+            leo.tilt.target = Math.sin(this.t * 20) * 0.03;
+            this.zones().forEach((z, i) => {
+              if (this.wet[i] > 0 && Math.hypot(this.ptr!.x - z.x, this.ptr!.y - z.y) < 46) {
+                this.wet[i] -= dt * 0.9;
+                if (Math.random() < dt * 14) this.emit('line', z.x + rand(-20, 20), z.y + rand(-20, 20), rand(-200, -120), 0, 0.25);
+                if (this.wet[i] <= 0) {
+                  this.wet[i] = 0;
+                  this.sound.note(8 + i);
+                  buzz(15);
+                  leo.boop(0.5);
+                  this.say('뽀송', z.x, z.y - 20, 20, '#3f7fb5');
+                }
+              }
+            });
+          }
+          if (this.wet.every((w) => w <= 0)) {
+            leo.tilt.target = 0;
             this.stats.clean = 100;
-            this.say('뽀송뽀송', leo.x, g - 215, 28, '#3f7fb5');
-            this.endScene('목욕 끝! 싫어했지만 뽀송해졌어요', { mood: -4 });
+            this.say('뽀송뽀송!', leo.x, g - 215, 30, '#3f7fb5');
+            this.endScene('목욕 끝! 싫어했지만 뽀송해졌어요', { mood: -2 });
           }
         }
         break;
       }
       case 'walk': {
-        const walking = !!this.ptr && this.sub === 0;
+        const h = this.handle;
+        const restX = leo.x + 105;
+        const restY = g - 150;
+        if (!h.held) {
+          h.x += (restX - h.x) * Math.min(1, dt * 8);
+          h.y += (restY - h.y) * Math.min(1, dt * 8);
+        }
+        // 손잡이를 앞으로 끌수록 빨리 걷는다
+        const pull = this.sub === 0 && h.held ? clamp((h.x - restX + 20) / 110, 0, 1) : 0;
+        const walking = pull > 0.12;
         leo.treadmill = walking;
         if (walking) {
-          this.dist += dt * 5.5;
-          this.scroll += dt * 120;
+          this.dist += dt * 8 * pull;
+          this.scroll += dt * 170 * pull;
         }
         if (this.other === 1) this.otherX += (W - 80 - this.otherX) * Math.min(1, dt * 4);
         if (this.other === 2) {
@@ -925,9 +1030,26 @@ export class Game {
             this.other = 2;
             this.say('휴…', leo.x, g - 210, 24, INK);
           }
+        } else if (this.sub === 4) {
+          leo.eye = 'squint';
+          leo.pant = true;
+        } else if (this.sub === 5) {
+          this.dist += dt * 4;
+          this.scroll += dt * 110;
+          if (this.dist >= 100) this.endScene('산책 끝! 마지막엔 안겨서 왔어요', { mood: 25, energy: -20, clean: -10, hunger: -8 });
         }
         if (this.sub === 0) {
-          if (this.dist >= 25 && !(this.ev & 1)) {
+          const poop = (msg: string) => {
+            this.sub = 3;
+            this.walkPoop = leo.x - 70;
+            h.held = false;
+            this.sound.pop();
+            this.onToast(msg);
+          };
+          if (this.dist >= 5 && !(this.ev & 8)) {
+            this.ev |= 8;
+            poop('나오자마자 응가! 눌러서 봉투에 담아주세요');
+          } else if (this.dist >= 25 && !(this.ev & 1)) {
             this.ev |= 1;
             this.sub = 1;
             this.modeT = 1.8;
@@ -938,15 +1060,18 @@ export class Game {
             this.calm = 0;
             this.other = 1;
             this.tickT = 0;
+            h.held = false;
             this.onToast('다른 강아지다! 레오를 쓰다듬어 진정시켜 주세요');
           } else if (this.dist >= 80 && !(this.ev & 4)) {
             this.ev |= 4;
-            this.sub = 3;
-            this.walkPoop = leo.x - 70;
-            this.sound.pop();
-            this.onToast('응가! 눌러서 봉투에 담아주세요');
-          } else if (this.dist >= 100) {
-            this.endScene('산책 끝! 기분 최고', { mood: 25, energy: -20, clean: -10, hunger: -8 });
+            poop('또 응가! 눌러서 봉투에 담아주세요');
+          } else if (this.dist >= 90 && !(this.ev & 16)) {
+            this.ev |= 16;
+            this.sub = 4;
+            h.held = false;
+            leo.squash.target = 0.88;
+            this.say('힘들어…', leo.x, g - 215, 26, INK);
+            this.onToast('힘들다고 버티고 안 걸어요. 안아줘야 해요');
           }
         }
         break;
@@ -1051,6 +1176,15 @@ export class Game {
       c.blob(x + 1, g - 23, 5.5, 4.5, { fill: '#8a5a33', edge: '#5e3b1e', seed: 202 });
     }
 
+    if (this.mode === 'bath' && this.sub < 3) {
+      // 욕조 뒤쪽과 물
+      this.tubPath(false);
+      ctx.fillStyle = '#bfdcee';
+      ctx.fill();
+      ctx.strokeStyle = '#5f8fb0';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
     this.leo.draw(c, g);
     if (this.bowl !== null) {
       c.blob(this.bowl, g - 16, 21, 6, { fill: '#9a6a3c', seed: 210 });
@@ -1202,6 +1336,17 @@ export class Game {
     ctx.textAlign = 'center';
     ctx.fillStyle = INK;
     ctx.fillText(`산책 ${Math.min(100, Math.floor(this.dist))}%`, W / 2, 172);
+    const guide = [
+      '줄 손잡이를 오른쪽으로 끌면 레오가 따라와요',
+      '레오가 냄새 맡는 중',
+      '레오를 쓰다듬어 진정시켜요',
+      '응가를 눌러 치워요',
+      '레오를 위로 끌어올려 안아줘요',
+      '안겨서 집에 가는 중',
+    ][this.sub];
+    ctx.font = '400 16px Gaegu, "Comic Sans MS", cursive';
+    ctx.fillStyle = '#8c8272';
+    ctx.fillText(guide ?? '', W / 2, g + 56);
     ctx.restore();
   }
 
@@ -1211,13 +1356,37 @@ export class Game {
     const c = this.crayon;
     const g = this.gy;
     const leo = this.leo;
-    if (this.mode === 'bath') {
+    if (this.mode === 'bath' && this.sub < 3) {
+      // 욕조 앞면: 레오 하반신을 가려서 안에 들어가 있게
+      ctx.save();
+      this.tubPath(true);
+      ctx.clip();
+      ctx.fillStyle = '#eef3f6';
+      ctx.fillRect(leo.x - 112, g - 82, 224, 104);
+      ctx.strokeStyle = '#cfdde6';
+      ctx.lineWidth = 3;
+      ctx.globalAlpha = 0.8;
+      ctx.beginPath();
+      for (let d = -130; d < 130; d += 6) {
+        const j = ((c.boil * 5 + d * 7) % 4) * 0.6;
+        ctx.moveTo(leo.x + d + j - 20, g + 20);
+        ctx.lineTo(leo.x + d + j + 20, g - 82);
+      }
+      ctx.stroke();
+      ctx.restore();
+      this.tubPath(true);
+      ctx.strokeStyle = '#5f8fb0';
+      ctx.lineWidth = 2.2;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+      c.blob(leo.x - 62, g + 18, 10, 6, { fill: '#c9a24a', edge: '#8a6a22', seed: 242 });
+      c.blob(leo.x + 62, g + 18, 10, 6, { fill: '#c9a24a', edge: '#8a6a22', seed: 243 });
       const n = Math.round(this.foam * 30);
       for (let i = 0; i < n; i++) {
         const a = i * 2.4;
-        const r = 18 + ((i * 37) % 60);
-        const bx = leo.x + Math.cos(a) * r * 0.9;
-        const by = g - 95 * LEO_SCALE + Math.sin(a) * r * 1.25 + Math.sin(this.t * 3 + i) * 1.5;
+        const r = 14 + ((i * 37) % 52);
+        const bx = leo.x + Math.cos(a) * r * 1.1;
+        const by = g - 112 * LEO_SCALE + Math.sin(a) * r * 0.95 + Math.sin(this.t * 3 + i) * 1.5;
         ctx.fillStyle = '#ffffff';
         ctx.strokeStyle = '#8fb9d8';
         ctx.lineWidth = 1.5;
@@ -1226,8 +1395,45 @@ export class Game {
         ctx.fill();
         ctx.stroke();
       }
-      c.blob(leo.x, g - 12, 104, 30, { fill: '#a9cde4', edge: '#5f8fb0', seed: 240, hatch: 0.15 });
-      c.blob(leo.x, g - 30, 98, 9, { fill: '#e6f1f7', edge: '#5f8fb0', seed: 241, hatch: 0 });
+      // 물 위 거품
+      for (let i = 0; i < 9; i++) {
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#8fb9d8';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(leo.x - 88 + i * 22, g - 60 + Math.sin(this.t * 2 + i) * 2 + (i % 2) * 5, 7 + (i % 3) * 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+    if (this.mode === 'bath' && this.sub === 3) {
+      this.zones().forEach((z, i) => {
+        const w = this.wet[i];
+        if (w <= 0) return;
+        ctx.save();
+        ctx.globalAlpha = 0.35 + w * 0.65;
+        for (let k = 0; k < 3; k++) {
+          const dx = (k - 1) * 15;
+          const dy = Math.sin(this.t * 4 + k + i) * 3 + (k === 1 ? -8 : 4);
+          ctx.fillStyle = '#6fa3cf';
+          ctx.beginPath();
+          ctx.moveTo(z.x + dx, z.y + dy - 9);
+          ctx.bezierCurveTo(z.x + dx + 8, z.y + dy + 2, z.x + dx + 4, z.y + dy + 8, z.x + dx, z.y + dy + 8);
+          ctx.bezierCurveTo(z.x + dx - 4, z.y + dy + 8, z.x + dx - 8, z.y + dy + 2, z.x + dx, z.y + dy - 9);
+          ctx.fill();
+        }
+        ctx.restore();
+      });
+      if (this.ptr) {
+        // 드라이기
+        ctx.save();
+        ctx.translate(this.ptr.x + 46, this.ptr.y - 30);
+        ctx.rotate(-0.5 + Math.sin(this.t * 30) * 0.03);
+        c.rect(-6, 4, 14, 34, '#4a4640', 280, '#e8a0a0');
+        c.blob(-6, 0, 26, 15, { fill: '#e2574c', edge: '#4a4640', seed: 281, hatch: 0.2 });
+        c.blob(-30, 0, 7, 11, { fill: '#4a4640', seed: 282, solid: true });
+        ctx.restore();
+      }
     }
     if (this.mode === 'walk') {
       if (this.other) {
@@ -1249,6 +1455,29 @@ export class Game {
         c.blob(x, g - 6, 15, 7, { fill: '#8a5a33', edge: '#5e3b1e', seed: 200 });
         c.blob(x, g - 15, 10.5, 6, { fill: '#8a5a33', edge: '#5e3b1e', seed: 201 });
         c.blob(x + 1, g - 23, 5.5, 4.5, { fill: '#8a5a33', edge: '#5e3b1e', seed: 202 });
+      }
+      {
+        const h = this.handle;
+        const ax = leo.x + 20 * LEO_SCALE;
+        const ay = g - 96 * LEO_SCALE + leo.lift.x + leo.hopY;
+        ctx.save();
+        ctx.strokeStyle = '#d1483a';
+        ctx.lineCap = 'round';
+        ctx.lineWidth = 3.2;
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        const slack = Math.max(6, 46 - Math.hypot(h.x - ax, h.y - ay) * 0.22);
+        ctx.quadraticCurveTo((ax + h.x) / 2, Math.max(ay, h.y) + slack, h.x, h.y + 14);
+        ctx.stroke();
+        ctx.lineWidth = 5.5;
+        ctx.beginPath();
+        ctx.ellipse(h.x, h.y, 12 + (c.boil % 2) * 0.6, 16, 0.2, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+        if (this.sub === 5) {
+          c.blob(leo.x - 46, g - 34 + leo.lift.x, 17, 13, { fill: '#f1c9a5', edge: '#b98a63', seed: 290 });
+          c.blob(leo.x + 46, g - 34 + leo.lift.x, 17, 13, { fill: '#f1c9a5', edge: '#b98a63', seed: 291 });
+        }
       }
       if (this.ev & 1 && this.sub === 1) {
         c.line([[leo.x + 62, g + 8], [leo.x + 62, g - 16]], '#7fa35a', 2.4, 260, 1);

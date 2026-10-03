@@ -348,6 +348,11 @@ export class Sound {
     this.hit(this.now(), 0.16, 0.05, 4200, 'highpass', this.sfx);
   }
 
+  dryer() {
+    if (!this.ctx) return;
+    this.hit(this.now(), 0.18, 0.07, 900, 'bandpass', this.sfx);
+  }
+
   thump() {
     if (!this.ctx) return;
     const t = this.now();
