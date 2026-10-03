@@ -103,10 +103,9 @@ export class Game {
   onLevelUp: (level: number, game: EventGame) => void = () => {};
   private lastGame: EventGame | null = null;
   private kisses = 0;
-  private tug = 0;
   private sockN = 0;
   private sockT = 0;
-  private socks: { x: number; y: number; t: number; c: number }[] = [];
+  private socks: { x: number; y: number; vx: number; vy: number; t: number; c: number; tissue: boolean }[] = [];
   private pendingEvent = false;
   private cake = {
     layers: [] as number[],
@@ -202,7 +201,8 @@ export class Game {
 
   /** 다음 레벨까지 필요한 경험치 */
   need(level = this.level) {
-    return 100 + (level - 1) * 50;
+    void level;
+    return 150;
   }
 
   private gainXp(n: number) {
@@ -407,10 +407,7 @@ export class Game {
     this.ptr.x = p.x;
     this.ptr.y = p.y;
 
-    if (this.mode === 'sock') {
-      if (this.sub === 0 && dx < 0) this.tug += -dx / 520;
-      return;
-    }
+    if (this.mode === 'sock') return;
     if (this.mode === 'trick') return;
     if (this.mode === 'cake') {
       const ck = this.cake;
@@ -992,33 +989,47 @@ export class Game {
     );
   }
 
-  // ---------- 이벤트 미니게임: 양말 벗기기 + 양말 물기 ----------
+  // ---------- 이벤트 미니게임: 양말 물기 ----------
+  /** 10초 안에 양말 10개 이상. 휴지는 함정. 실패하면 재도전 */
   private startSock() {
     const leo = this.leo;
     this.mode = 'sock';
-    this.sub = 0;
-    this.tug = 0;
-    this.sockN = 0;
-    this.socks = [];
     this.barksLeft = 0;
-    leo.x = 150;
+    leo.x = W / 2 - 20;
     leo.dir = 1;
     leo.targetX = null;
     this.sound.jingle();
-    this.onToast('양말 사냥 시간! 발에서 양말을 벗겨요');
+    this.onToast('양말 사냥! 10초 안에 양말 10개를 물어요. 휴지는 물면 안 돼요');
+    this.sockRound();
+  }
+
+  private sockRound() {
+    this.sub = 0;
+    this.modeT = 1.4;
+    this.sockN = 0;
+    this.sockT = 0;
+    this.socks = [];
   }
 
   private sockDown(p: P) {
     if (this.sub !== 1) return;
     const leo = this.leo;
-    const i = this.socks.findIndex((s) => Math.hypot(p.x - s.x, p.y - s.y) < 40);
+    const i = this.socks.findIndex((s) => Math.hypot(p.x - s.x, p.y - s.y) < 38);
     if (i < 0) return;
     const s = this.socks[i];
     this.socks.splice(i, 1);
-    this.sockN++;
     leo.goTo(clamp(s.x, 45, W - 45), undefined, 620);
     leo.jump(-260);
     leo.barkPose();
+    if (s.tissue) {
+      this.sockN = Math.max(0, this.sockN - 1);
+      this.sound.boing();
+      buzz(60);
+      this.say('퉤! 휴지잖아 -1', s.x, s.y - 18, 24, INK);
+      for (let k = 0; k < 6; k++) this.emit('bubble', s.x, s.y, rand(-120, 120), rand(-120, 40), 0.5);
+      return;
+    }
+    this.sockN++;
     this.sound.munch();
     this.sound.note(this.sockN % 14);
     buzz(15);
@@ -1029,40 +1040,64 @@ export class Game {
   private updateSock(dt: number) {
     const leo = this.leo;
     const g = this.gy;
+    leo.pant = true;
+    this.modeT -= dt;
     if (this.sub === 0) {
-      this.tug = Math.max(0, this.tug - dt * 0.12);
-      leo.x = 150 - this.tug * 70;
-      leo.pant = false;
-      leo.mouth.target = 0.6;
-      leo.tremble = this.ptr ? 1 : 0;
-      if (this.tug >= 1) {
-        this.sub = 1;
-        this.modeT = 12;
-        this.sockT = 0;
-        this.sound.pop();
-        this.sound.fanfare();
-        buzz(60);
-        leo.jump(-380);
-        leo.happy(2);
-        this.say('뽁!', leo.x + 60, g - 150, 36, '#d1483a');
-        this.onToast('벗겼다! 양말이 나오면 눌러서 마구 물어요');
-      }
-    } else {
-      this.modeT -= dt;
-      this.sockT -= dt;
-      leo.pant = true;
-      if (this.sockT <= 0) {
-        this.sockT = 0.5;
-        this.socks.push({ x: rand(40, W - 40), y: g - rand(20, 250), t: 0, c: Math.floor(Math.random() * SOCK_COLORS.length) });
-      }
-      for (const s of this.socks) s.t += dt;
-      this.socks = this.socks.filter((s) => s.t < 1.7);
       if (this.modeT <= 0) {
-        const n = this.sockN;
-        const stars = n >= 14 ? 3 : n >= 9 ? 2 : 1;
-        this.socks = [];
-        this.endScene(`양말 ${n}개 물었어요! ${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}`, { mood: 35, energy: -10 }, 0);
+        this.sub = 1;
+        this.modeT = 10;
+        this.sound.pop();
       }
+    } else if (this.sub === 1) {
+      const prog = 1 - this.modeT / 10; // 뒤로 갈수록 빨라진다
+      this.sockT -= dt;
+      if (this.sockT <= 0) {
+        this.sockT = 0.42;
+        const sp = 90 + prog * 150;
+        const a = rand(0, Math.PI * 2);
+        this.socks.push({
+          x: rand(40, W - 40),
+          y: g - rand(30, 250),
+          vx: Math.cos(a) * sp,
+          vy: Math.sin(a) * sp,
+          t: 0,
+          c: Math.floor(Math.random() * SOCK_COLORS.length),
+          tissue: Math.random() < 0.3,
+        });
+      }
+      for (const s of this.socks) {
+        s.t += dt;
+        s.x += s.vx * dt;
+        s.y += s.vy * dt;
+        if (s.x < 28 || s.x > W - 28) {
+          s.vx *= -1;
+          s.x = clamp(s.x, 28, W - 28);
+        }
+        if (s.y < g - 265 || s.y > g - 16) {
+          s.vy *= -1;
+          s.y = clamp(s.y, g - 265, g - 16);
+        }
+      }
+      this.socks = this.socks.filter((s) => s.t < 2);
+      if (this.modeT <= 0) {
+        this.sub = 2;
+        this.modeT = 1.8;
+        this.socks = [];
+        leo.targetX = null;
+        if (this.sockN >= 10) {
+          this.sound.fanfare();
+          leo.happy(2);
+          leo.jump(-380);
+          this.say('성공!', W / 2, g - 230, 40, '#d1483a');
+        } else {
+          this.sound.growl();
+          this.say('실패… 다시!', W / 2, g - 230, 34, INK);
+          this.onToast(`${this.sockN}개밖에 못 물었어요. 10개 넘길 때까지 재도전`);
+        }
+      }
+    } else if (this.modeT <= 0) {
+      if (this.sockN >= 10) this.endScene(`양말 ${this.sockN}개 사냥 성공!`, { mood: 35, energy: -10 }, 0);
+      else this.sockRound();
     }
   }
 
@@ -1082,64 +1117,26 @@ export class Game {
   private drawSockGame() {
     const ctx = this.ctx;
     const c = this.crayon;
-    const leo = this.leo;
-    const g = this.gy;
-    if (this.sub === 0) {
-      // 다리와 발
-      c.rect(292, g - 190, 40, 172, '#5b6f8f', 520, '#8fa3c2');
-      c.blob(290, g - 14, 40, 15, { fill: '#f1c9a5', edge: '#b98a63', seed: 521 });
-      // 늘어나는 양말: 발끝에서 레오 입까지
-      const mx = leo.x + 18;
-      const my = g - 106 * LEO_SCALE;
+    for (const s of this.socks) {
       ctx.save();
-      ctx.lineCap = 'round';
-      ctx.strokeStyle = '#ee8a8a';
-      ctx.lineWidth = 30;
-      ctx.beginPath();
-      ctx.moveTo(300, g - 16);
-      ctx.lineTo(262, g - 16);
-      ctx.stroke();
-      ctx.lineWidth = Math.max(9, 22 - this.tug * 12);
-      ctx.beginPath();
-      ctx.moveTo(262, g - 16);
-      ctx.quadraticCurveTo((262 + mx) / 2, g - 30 - this.tug * 20, mx, my);
-      ctx.stroke();
-      ctx.strokeStyle = '#fbf3de';
-      ctx.lineWidth = 4;
-      ctx.setLineDash([3, 14]);
-      ctx.beginPath();
-      ctx.moveTo(300, g - 16);
-      ctx.lineTo(262, g - 16);
-      ctx.quadraticCurveTo((262 + mx) / 2, g - 30 - this.tug * 20, mx, my);
-      ctx.stroke();
-      ctx.restore();
-      // 당김 게이지
-      ctx.save();
-      ctx.lineCap = 'round';
-      ctx.lineWidth = 10;
-      ctx.strokeStyle = '#e6dcc6';
-      ctx.beginPath();
-      ctx.moveTo(95, Math.max(210, g - 290));
-      ctx.lineTo(295, Math.max(210, g - 290));
-      ctx.stroke();
-      ctx.strokeStyle = '#ee8a8a';
-      ctx.beginPath();
-      ctx.moveTo(95, Math.max(210, g - 290));
-      ctx.lineTo(95 + 200 * Math.min(1, this.tug), Math.max(210, g - 290));
-      ctx.stroke();
-      ctx.restore();
-      this.guide('화면을 왼쪽으로 쭉쭉 쓸어서 양말을 당겨요');
-    } else {
-      for (const s of this.socks) {
-        ctx.save();
-        ctx.globalAlpha = s.t > 1.3 ? (1.7 - s.t) / 0.4 : Math.min(1, s.t * 8);
-        this.sockItem(s.x, s.y + Math.sin(this.t * 6 + s.x) * 4, Math.sin(this.t * 5 + s.x) * 0.3, SOCK_COLORS[s.c], 530 + s.c * 5);
-        ctx.restore();
+      ctx.globalAlpha = s.t > 1.6 ? (2 - s.t) / 0.4 : Math.min(1, s.t * 8);
+      const rot = Math.sin(this.t * 5 + s.c + s.vx) * 0.35;
+      if (s.tissue) {
+        // 두루마리 휴지
+        ctx.translate(s.x, s.y);
+        ctx.rotate(rot);
+        c.rect(6, -4, 12, 26, '#a39c8e', 540, '#ffffff');
+        c.blob(0, 0, 14, 14, { fill: '#ffffff', edge: '#a39c8e', seed: 541, hatch: 0.4 });
+        c.blob(0, 0, 5, 5, { fill: '#c9bda4', edge: '#a39c8e', seed: 542 });
+      } else {
+        this.sockItem(s.x, s.y, rot, SOCK_COLORS[s.c], 530 + s.c * 5);
       }
-      this.banner(`${Math.max(0, Math.ceil(this.modeT))}초 · 양말 ${this.sockN}개`, 30);
-      this.guide('양말을 눌러요. 레오가 달려가서 물어요');
+      ctx.restore();
     }
-    void c;
+    if (this.sub === 0) this.banner('준비…', 44);
+    else if (this.sub === 1) this.banner(`${Math.max(0, Math.ceil(this.modeT))}초 · 양말 ${this.sockN}/10`, 30, this.sockN >= 10 ? '#6b8f5a' : INK);
+    else this.banner(`양말 ${this.sockN}/10`, 30);
+    this.guide('움직이는 양말만 눌러요. 휴지를 물면 1개 깎여요');
   }
 
   // ---------- 이벤트 미니게임: 레오 생일 케이크 ----------

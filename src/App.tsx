@@ -4,7 +4,7 @@ import { Game, type Action, type EventGame, type Stats } from './game/engine';
 const EVENTS: Record<EventGame, { name: string; go: string }> = {
   cake: { name: '레오 생일 케이크 만들기', go: '케이크 만들러 가기' },
   trick: { name: '개인기 연습하기', go: '개인기 연습하러 가기' },
-  sock: { name: '양말 벗기기 + 양말 물기', go: '양말 사냥하러 가기' },
+  sock: { name: '양말 물기', go: '양말 사냥하러 가기' },
 };
 
 const METERS: { key: keyof Stats; label: string; color: string }[] = [
@@ -104,7 +104,7 @@ export default function App() {
   const [toast, setToast] = useState('');
   const [started, setStarted] = useState(false);
   const [muted, setMuted] = useState(false);
-  const [prog, setProg] = useState({ level: 1, xp: 0, need: 100 });
+  const [prog, setProg] = useState({ level: 1, xp: 0, need: 150 });
   const [event, setEvent] = useState<{ level: number; game: EventGame } | null>(null);
 
   useEffect(() => {
