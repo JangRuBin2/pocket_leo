@@ -142,7 +142,7 @@ export class Game {
       const sec = clamp((Date.now() - d.ts) / 1000, 0, 3600 * 48);
       this.stats = d.stats;
       this.poops = Array.from({ length: Math.min(d.poops || 0, 3) }, () => rand(60, W - 110));
-      this.decay(sec);
+      this.decay(sec, 15); // 꺼둔 동안에는 15 밑으로는 안 떨어진다
     } catch {
       /* 저장소를 못 쓰는 환경이면 기본값으로 시작 */
     }
@@ -156,12 +156,17 @@ export class Game {
     }
   }
 
-  private decay(sec: number) {
+  /** 수치가 가득에서 바닥까지 걸리는 시간(분) */
+  private static readonly DRAIN_MIN = { hunger: 45, mood: 60, clean: 90, energy: 75 };
+
+  private decay(sec: number, floor = 0) {
     const s = this.stats;
-    s.hunger -= (100 / (3 * 3600)) * sec;
-    s.mood -= (100 / (5 * 3600)) * sec;
-    s.clean -= (100 / (8 * 3600)) * (1 + this.poops.length * 3) * sec;
-    if (this.mode === 'idle') s.energy += (100 / (2 * 3600)) * sec;
+    const d = Game.DRAIN_MIN;
+    const drop = (v: number, min: number, mul = 1) => Math.max(Math.min(v, floor), v - (100 / (min * 60)) * mul * sec);
+    s.hunger = drop(s.hunger, d.hunger);
+    s.mood = drop(s.mood, d.mood);
+    s.clean = drop(s.clean, d.clean, 1 + this.poops.length * 2);
+    if (this.mode !== 'sleep') s.energy = drop(s.energy, d.energy);
     this.clampStats();
   }
 
