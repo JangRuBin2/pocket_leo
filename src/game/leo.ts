@@ -51,6 +51,7 @@ export class Leo {
   harness = false;
   hat = false;
   paw = new Spring(0, 220, 14);
+  legUp = new Spring(0, 160, 13);
   lift = new Spring(0, 110, 12);
   private prevY = 0;
 
@@ -121,7 +122,7 @@ export class Leo {
     this.prevY = y;
     this.fur.target = clamp(-dy * 0.03, -9, 9);
 
-    for (const s of [this.squash, this.headX, this.headY, this.tilt, this.fur, this.mouth, this.tailAmp, this.lift, this.paw]) s.step(dt);
+    for (const s of [this.squash, this.headX, this.headY, this.tilt, this.fur, this.mouth, this.tailAmp, this.lift, this.paw, this.legUp]) s.step(dt);
     this.squash.x = clamp(this.squash.x, 0.6, 1.4);
 
     this.tailPhase += dt * this.tailSpeed;
@@ -171,7 +172,7 @@ export class Leo {
 
     if (!back) tail(30);
     c.blob(-35, -12, 13, 14, { fill: CREAM, edge: TAN, seed: 2, fur: 0.15 });
-    c.blob(35 + kickX, -12 - Math.abs(kickX) * 0.4, 13, 14, { fill: CREAM, edge: TAN, seed: 3, fur: 0.15 });
+    c.blob(35 + kickX + this.legUp.x * 20, -12 - Math.abs(kickX) * 0.4 - this.legUp.x * 22, 13, 14, { fill: CREAM, edge: TAN, seed: 3, fur: 0.15, rot: -this.legUp.x * 0.9 });
     c.blob(0, -58, 48, 46, { fill: CREAM, edge: TAN, seed: 4, fur: 0.22 });
     c.blob(-19, -15 - Math.max(0, lp), 11, 17, { fill: APRICOT, edge: TAN, seed: 5, fur: 0.12 });
     c.blob(19 + this.paw.x * 14, -15 - Math.max(0, -lp) - this.paw.x * 28, 11, 17, { fill: APRICOT, edge: TAN, seed: 6, fur: 0.12, rot: -this.paw.x * 1.0 });

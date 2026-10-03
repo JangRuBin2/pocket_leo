@@ -16,7 +16,7 @@ const GAMES: EventGame[] = ['cake', 'trick', 'sock'];
 const SOCK_COLORS = ['#7fa8c9', '#ee8a8a', '#9dbf7a', '#f2c84b', '#b79ad6'];
 
 interface Part {
-  kind: 'heart' | 'dust' | 'line' | 'crumb' | 'drop' | 'bubble';
+  kind: 'heart' | 'dust' | 'line' | 'crumb' | 'drop' | 'bubble' | 'pee';
   x: number;
   y: number;
   vx: number;
@@ -72,6 +72,7 @@ export class Game {
   private barkT = 0;
   private eating = false;
   private poopQ: number[] = [];
+  private autoPoop = 70;
   private poops: number[] = [];
   private bowl: number | null = null;
   private treat: { x: number; y: number; vy: number; held: boolean; dropped: boolean } | null = null;
@@ -173,7 +174,8 @@ export class Game {
       this.xp = d.xp ?? 0;
       const sec = clamp((Date.now() - d.ts) / 1000, 0, 3600 * 48);
       this.stats = d.stats;
-      this.poops = Array.from({ length: Math.min(d.poops || 0, 3) }, () => rand(60, W - 110));
+      // 꺼둔 동안에도 15분에 하나씩 쌓인다 (최대 4개)
+      this.poops = Array.from({ length: Math.min((d.poops || 0) + Math.floor(sec / 900), 4) }, () => rand(60, W - 110));
       this.decay(sec, 15); // 꺼둔 동안에는 15 밑으로는 안 떨어진다
     } catch {
       /* 저장소를 못 쓰는 환경이면 기본값으로 시작 */
@@ -1428,6 +1430,7 @@ export class Game {
     leo.tremble = 0;
     leo.harness = false;
     leo.paw.target = 0;
+    leo.legUp.target = 0;
     leo.lift.target = 0;
     leo.squash.target = 1;
     this.handle.held = false;
@@ -1580,7 +1583,13 @@ export class Game {
             this.barkT = 0;
           }
         }
-        if (this.poopQ.length && this.t > this.poopQ[0]) {
+        // 똥쟁이: 밥을 안 줘도 1~2분마다 알아서 싼다 (바닥에 5개까지)
+        this.autoPoop -= dt;
+        if (this.autoPoop <= 0) {
+          this.autoPoop = rand(70, 130);
+          if (this.poops.length < 5) this.poopQ.push(this.t);
+        }
+        if (this.poopQ.length && this.t > this.poopQ[0] && leo.targetX === null) {
           this.poopQ.shift();
           this.poops.push(clamp(leo.x - leo.dir * 62, 40, W - 110));
           this.sound.pop();
@@ -1855,10 +1864,27 @@ export class Game {
           if (this.otherX > W + 90) this.other = 0;
         }
         if (this.sub === 1) {
+          // 킁킁 냄새 맡고 나서 다리 들고 마킹
+          const before = this.modeT;
           this.modeT -= dt;
-          leo.headY.target = 26;
+          if (this.modeT > 1.7) {
+            leo.headY.target = 26;
+          } else {
+            if (before > 1.7) {
+              this.say('쉬…', leo.x + 20, g - 215, 26, '#c9a520');
+              this.sound.bubble();
+            }
+            leo.legUp.target = 1;
+            leo.tilt.target = -0.12;
+            leo.eye = 'squint';
+            if (this.modeT > 0.35)
+              for (let i = 0; i < 2; i++) this.emit('pee', leo.x + 44, g - 34, rand(40, 75), rand(-70, -30), 0.5);
+          }
           if (this.modeT <= 0) {
+            leo.legUp.target = 0;
+            leo.tilt.target = 0;
             this.sub = 0;
+            this.say('영역 표시 완료', leo.x + 30, g - 215, 22, '#6b8f5a');
             this.bump({ mood: 5 });
           }
         } else if (this.sub === 2) {
@@ -1894,11 +1920,9 @@ export class Game {
           } else if (this.dist >= 25 && !(this.ev & 1)) {
             this.ev |= 1;
             this.sub = 1;
-            this.modeT = 1.8;
+            this.modeT = 3.5;
+            h.held = false;
             this.say('킁킁', leo.x + 50, g - 60, 24, '#6b8f5a');
-          } else if (this.dist >= 40 && !(this.ev & 32)) {
-            this.ev |= 32;
-            poop('가다가 또 응가! 눌러서 봉투에 담아주세요');
           } else if (this.dist >= 55 && !(this.ev & 2)) {
             this.ev |= 2;
             this.sub = 2;
@@ -1909,7 +1933,7 @@ export class Game {
             this.onToast('다른 강아지다! 레오를 쓰다듬어 진정시켜 주세요');
           } else if (this.dist >= 80 && !(this.ev & 4)) {
             this.ev |= 4;
-            poop('세 번째 응가! 진짜 똥쟁이. 눌러서 치워주세요');
+            poop('또 응가! 눌러서 봉투에 담아주세요');
           } else if (this.dist >= 90 && !(this.ev & 16)) {
             this.ev |= 16;
             this.sub = 4;
@@ -2032,6 +2056,7 @@ export class Game {
       p.y += p.vy * dt;
       if (p.kind === 'crumb' || p.kind === 'dust') p.vy += 320 * dt;
       if (p.kind === 'drop') p.vy += 900 * dt;
+      if (p.kind === 'pee') p.vy += 500 * dt;
     }
     this.parts = this.parts.filter((p) => p.t < p.life);
     for (const f of this.texts) {
@@ -2172,6 +2197,11 @@ export class Game {
         ctx.moveTo(0, 0);
         ctx.lineTo(-p.vx * 0.02, -p.vy * 0.02 - 4);
         ctx.stroke();
+      } else if (p.kind === 'pee') {
+        ctx.fillStyle = '#e8c93a';
+        ctx.beginPath();
+        ctx.arc(0, 0, 2.6, 0, Math.PI * 2);
+        ctx.fill();
       } else if (p.kind === 'bubble') {
         ctx.fillStyle = '#ffffff';
         ctx.strokeStyle = '#8fb9d8';
@@ -2246,7 +2276,7 @@ export class Game {
     ctx.fillText(`산책 ${Math.min(100, Math.floor(this.dist))}%`, W / 2, 196);
     const guide = [
       '줄 손잡이를 오른쪽으로 끌면 레오가 따라와요',
-      '레오가 냄새 맡는 중',
+      '레오가 냄새 맡고 마킹하는 중',
       '레오를 쓰다듬어 진정시켜요',
       '응가를 눌러 치워요',
       '레오를 위로 끌어올려 안아줘요',
@@ -2391,6 +2421,9 @@ export class Game {
           c.blob(leo.x - 46, g - 34 + leo.lift.x, 17, 13, { fill: '#f1c9a5', edge: '#b98a63', seed: 290 });
           c.blob(leo.x + 46, g - 34 + leo.lift.x, 17, 13, { fill: '#f1c9a5', edge: '#b98a63', seed: 291 });
         }
+      }
+      if (this.ev & 1 && this.sub === 1 && this.modeT < 1.5) {
+        c.blob(leo.x + 70, g + 6, 6 + (1.5 - this.modeT) * 9, 3.5, { fill: '#e8c93a', seed: 262, hatch: 0.1 });
       }
       if (this.ev & 1 && this.sub === 1) {
         c.line([[leo.x + 62, g + 8], [leo.x + 62, g - 16]], '#7fa35a', 2.4, 260, 1);
