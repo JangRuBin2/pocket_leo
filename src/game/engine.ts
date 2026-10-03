@@ -781,8 +781,13 @@ export class Game {
     ctx.save();
     ctx.font = `700 ${size}px Gaegu, "Comic Sans MS", cursive`;
     ctx.textAlign = 'center';
-    ctx.translate(W / 2, Math.max(200, this.gy - 300));
+    // HUD 바로 아래(알림 자리) 고정 + 종이색 테두리. 미니게임 중에는 알림을 안 띄우므로 겹치지 않는다
+    ctx.translate(W / 2, 146);
     ctx.rotate(-0.04);
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 9;
+    ctx.strokeStyle = PAPER;
+    ctx.strokeText(text, 0, 0);
     ctx.fillStyle = color;
     ctx.fillText(text, 0, 0);
     ctx.restore();
@@ -821,7 +826,6 @@ export class Game {
     leo.dir = 1;
     leo.targetX = null;
     this.sound.jingle();
-    this.onToast('개인기 연습 시간! 앉아부터 뽀뽀까지 성공해 봐요');
   }
 
   private trickDown(p: P) {
@@ -848,7 +852,6 @@ export class Game {
             this.modeT = 0;
             this.sound.jingle();
             leo.happy(1.2);
-            this.onToast('마지막은 뽀뽀! 요리조리 피하는 주둥이에 4번 쪽');
           }
         } else {
           this.trickN = 0;
@@ -872,7 +875,6 @@ export class Game {
           this.tickT = 0;
           leo.x = 150;
           this.sound.fanfare();
-          this.onToast('개인기 전부 성공! 왕큰 쌩쌩이 받아라');
         }
       } else {
         this.kisses = Math.max(0, this.kisses - 1);
@@ -889,14 +891,14 @@ export class Game {
       // 딴청 피울 때 시키면 무시당한다
       this.trickN = 0;
       this.sound.boing();
-      this.say('딴청 피우는 중! 처음부터', W / 2, this.gy - 215, 22, INK);
+      this.say('딴청 중! 처음부터', leo.x + 118, this.gy - 20, 20, INK);
       return;
     }
     this.trickN++;
     leo.boop(1);
     this.sound.pop();
     buzz(20);
-    this.say(`앉았다! ${this.trickN}/2`, leo.x, this.gy - 215, 28, '#6b8f5a');
+    this.say('앉았다!', leo.x + 118, this.gy - 20, 26, '#6b8f5a');
     // 한 번 앉히면 바로 딴청을 피워서, 막 쓸어내리는 걸로는 못 깬다
     this.looking = false;
     this.tickT = rand(0.8, 1.7);
@@ -907,7 +909,6 @@ export class Game {
       leo.squash.target = 0.84;
       leo.tilt.target = 0;
       this.sound.jingle();
-      this.onToast('기다려! 화면을 연타해서 5초 동안 참게 해요');
     }
   }
 
@@ -952,7 +953,6 @@ export class Game {
         buzz(30);
         leo.happy(1.2);
         this.say('잘 기다렸어!', leo.x, g - 215, 28, '#6b8f5a');
-        this.onToast('손! 발을 번쩍 든 순간에만 눌러요. 3번 연속');
       }
     } else if (this.sub === 2) {
       // 손: 드는 순간이 짧고 간격이 들쭉날쭉
@@ -1001,11 +1001,11 @@ export class Game {
       ctx.restore();
     };
     if (this.sub === 0) {
-      label(this.looking ? '!' : '…', leo.x + 58, g - 190, this.looking ? '#6b8f5a' : '#8c8272', 44);
-      label(`${this.trickN}/2`, leo.x + 112, g - 120, INK);
+      label(this.looking ? '!' : '…', leo.x - 78, g - 128, this.looking ? '#6b8f5a' : '#8c8272', 52);
+      label(`${this.trickN}/2`, leo.x + 118, g - 150, INK, 28);
       if (this.looking) {
-        const ax = leo.x + 112;
-        const ay = g - 90 + ((this.t * 80) % 30);
+        const ax = leo.x + 118;
+        const ay = g - 112 + ((this.t * 80) % 30);
         c.line([[ax, ay - 20], [ax, ay + 14]], '#6b8f5a', 3.4, 500, 1);
         c.line([[ax - 10, ay + 2], [ax, ay + 16], [ax + 10, ay + 2]], '#6b8f5a', 3.4, 501, 1);
       }
@@ -1043,7 +1043,7 @@ export class Game {
         ctx.restore();
       }
     }
-    if (this.sub === 3) label(`뽀뽀 ${this.kisses}/4`, W / 2, Math.max(232, g - 268), '#d1483a');
+    if (this.sub === 3) label(`${this.kisses}/4`, W / 2, 182, '#d1483a', 28);
     if (this.sub === 4) {
       const fall = Math.min(g - 62, g - 340 + 900 * this.modeT * this.modeT);
       const k = 3 * (1 - clamp((this.modeT - 0.7) / 2.3, 0, 0.95));
@@ -1070,7 +1070,6 @@ export class Game {
     leo.dir = 1;
     leo.targetX = null;
     this.sound.jingle();
-    this.onToast('양말 사냥! 10초 안에 양말 10개를 물어요. 휴지는 물면 안 돼요');
     this.sockRound();
   }
 
@@ -1163,7 +1162,6 @@ export class Game {
         } else {
           this.sound.growl();
           this.say('실패… 다시!', W / 2, g - 230, 34, INK);
-          this.onToast(`${this.sockN}개밖에 못 물었어요. 10개 넘길 때까지 재도전`);
         }
       }
     } else if (this.modeT <= 0) {
@@ -1204,7 +1202,7 @@ export class Game {
       }
       ctx.restore();
     }
-    if (this.sub === 0) this.banner('준비…', 44);
+    if (this.sub === 0) this.banner('10초 안에 양말 10개!', 34);
     else if (this.sub === 1) this.banner(`${Math.max(0, Math.ceil(this.modeT))}초 · 양말 ${this.sockN}/10`, 30, this.sockN >= 10 ? '#6b8f5a' : INK);
     else this.banner(`양말 ${this.sockN}/10`, 30);
     this.guide('움직이는 양말만 눌러요. 휴지를 물면 1개 깎여요');
