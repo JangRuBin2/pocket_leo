@@ -2328,7 +2328,7 @@ export class Game {
         ctx.restore();
       });
       // 짜증 게이지
-      const gy0 = Math.max(205, g - 295);
+      const gy0 = 176; // HUD 바로 아래 고정. 화면이 짧아도 레오를 안 가린다
       ctx.save();
       ctx.lineCap = 'round';
       ctx.lineWidth = 10;
