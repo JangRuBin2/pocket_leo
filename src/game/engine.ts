@@ -106,6 +106,8 @@ export class Game {
     acc: 0,
     cream: 0,
     lit: false,
+    strokes: [] as P[][],
+    drawing: false,
     tops: [] as { kind: number; x: number; y: number; hx: number; hy: number; placed: boolean; held: boolean }[],
   };
   private tool: { kind: 'steth' | 'syringe'; x: number; y: number; held: boolean } | null = null;
@@ -190,7 +192,7 @@ export class Game {
 
   /** 다음 레벨까지 필요한 경험치 */
   need(level = this.level) {
-    return 30 + (level - 1) * 25;
+    return 100 + (level - 1) * 50;
   }
 
   private gainXp(n: number) {
@@ -404,6 +406,13 @@ export class Game {
         held.x = p.x;
         held.y = p.y;
       }
+      if (this.sub === 3 && ck.drawing) {
+        const b = this.plaque();
+        const st = ck.strokes[ck.strokes.length - 1];
+        const q = { x: clamp(p.x - b.x, 4, b.w - 4), y: clamp(p.y - b.y, 4, b.h - 4) };
+        const lastQ = st[st.length - 1];
+        if (Math.hypot(q.x - lastQ.x, q.y - lastQ.y) > 2) st.push(q);
+      }
       return;
     }
     if (this.handle.held) {
@@ -449,6 +458,7 @@ export class Game {
     if (!ptr) return;
     if (this.mode === 'cake') {
       const ck = this.cake;
+      ck.drawing = false;
       const held = ck.tops.find((o) => o.held);
       if (held) {
         held.held = false;
@@ -744,10 +754,17 @@ export class Game {
       acc: 0,
       cream: 0,
       lit: false,
+      strokes: [],
+      drawing: false,
       tops: [0, 0, 1, 2].map((kind, i) => ({ kind, x: 160 + i * 52, y: ty, hx: 160 + i * 52, hy: ty, placed: false, held: false })),
     };
     this.sound.jingle();
     this.onToast('레오 생일이에요! 강아지 케이크를 만들어요');
+  }
+
+  /** 레터링용 초코판 위치 */
+  private plaque() {
+    return { x: 45, y: Math.max(150, this.gy - 350), w: 300, h: 140 };
   }
 
   private cakeDown(p: P) {
@@ -761,8 +778,25 @@ export class Game {
       const o = ck.tops.find((t) => !t.placed && Math.hypot(p.x - t.x, p.y - t.y) < 34);
       if (o) o.held = true;
     } else if (this.sub === 3) {
+      const b = this.plaque();
+      const by = b.y + b.h + 8;
+      if (p.y > by && p.y < by + 34 && p.x > 262 && p.x < 345) {
+        if (!ck.strokes.length) this.onToast('한 글자라도 써주세요');
+        else {
+          this.sub = 4;
+          this.sound.jingle();
+          this.onToast('마지막! 화면을 눌러 초에 불을 붙여주세요');
+        }
+      } else if (p.y > by && p.y < by + 34 && p.x > 184 && p.x < 254) {
+        ck.strokes = [];
+        this.sound.pop();
+      } else if (p.x > b.x && p.x < b.x + b.w && p.y > b.y && p.y < b.y + b.h) {
+        ck.drawing = true;
+        ck.strokes.push([{ x: p.x - b.x, y: p.y - b.y }]);
+      }
+    } else if (this.sub === 4) {
       ck.lit = true;
-      this.sub = 4;
+      this.sub = 5;
       this.modeT = 0;
       this.tickT = 0;
       this.leo.hat = true;
@@ -787,7 +821,7 @@ export class Game {
         if (ck.fall >= land) {
           ck.fall = null;
           const off = ck.mx - (i ? ck.layers[i - 1] : CAKE_X);
-          if (Math.abs(off) > CAKE_W[i] * 0.55) {
+          if (Math.abs(off) > CAKE_W[i] * 0.5 || Math.abs(ck.mx - CAKE_X) > 62) {
             this.sound.boing();
             this.say('앗! 다시', ck.mx, land - 20, 24, INK);
           } else {
@@ -814,9 +848,9 @@ export class Game {
       if (ck.tops.every((o) => o.placed)) {
         this.sub = 3;
         this.sound.jingle();
-        this.onToast('마지막! 화면을 눌러 초에 불을 붙여주세요');
+        this.onToast('초코판에 축하 글씨를 써주세요');
       }
-    } else if (this.sub === 4) {
+    } else if (this.sub === 5) {
       this.modeT += dt;
       this.tickT -= dt;
       if (this.tickT <= 0) {
@@ -869,7 +903,57 @@ export class Game {
     }
     const topX = ck.layers[2] ?? CAKE_X;
     const topY = g - 34 - 90;
-    if (this.sub >= 3) {
+    const icing = (ox: number, oy: number, k: number, lw: number) => {
+      ctx.save();
+      ctx.strokeStyle = '#fffaf0';
+      ctx.lineWidth = lw;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      for (const st of ck.strokes) {
+        ctx.beginPath();
+        st.forEach((q, i) => (i ? ctx.lineTo(ox + q.x * k, oy + q.y * k) : ctx.moveTo(ox + q.x * k, oy + q.y * k)));
+        if (st.length === 1) ctx.lineTo(ox + st[0].x * k + 0.1, oy + st[0].y * k);
+        ctx.stroke();
+      }
+      ctx.restore();
+    };
+    if (this.sub >= 4 && ck.strokes.length) {
+      // 완성된 레터링 초코판을 케이크 앞에 붙인다
+      const px = (ck.layers[0] ?? CAKE_X) - 48;
+      const py = g - 34 - 54;
+      ctx.fillStyle = '#6b3f1c';
+      ctx.fillRect(px, py, 96, 45);
+      c.rect(px, py, 96, 45, '#3f2410', 450);
+      icing(px + 3, py + 1.5, 0.3, 2);
+    }
+    if (this.sub === 3) {
+      const b = this.plaque();
+      ctx.fillStyle = '#6b3f1c';
+      ctx.fillRect(b.x, b.y, b.w, b.h);
+      c.rect(b.x, b.y, b.w, b.h, '#3f2410', 451, '#7d4a22');
+      ctx.save();
+      ctx.font = '700 40px Gaegu, "Comic Sans MS", cursive';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(255, 250, 240, 0.16)';
+      ctx.fillText('레오야', b.x + b.w / 2, b.y + 56);
+      ctx.fillText('생일 축하해', b.x + b.w / 2, b.y + 108);
+      ctx.restore();
+      icing(b.x, b.y, 1, 6);
+      const by = b.y + b.h + 8;
+      ctx.fillStyle = PAPER;
+      ctx.fillRect(184, by, 70, 34);
+      ctx.fillRect(262, by, 83, 34);
+      c.rect(184, by, 70, 34, INK, 452);
+      c.rect(262, by, 83, 34, INK, 453, '#e8964a');
+      ctx.save();
+      ctx.font = '700 19px Gaegu, "Comic Sans MS", cursive';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = INK;
+      ctx.fillText('지우기', 219, by + 23);
+      ctx.fillText('다 썼어요', 303.5, by + 23);
+      ctx.restore();
+    }
+    if (this.sub >= 4) {
       c.rect(topX - 3, topY - 34, 6, 30, '#3f7fb5', 430, '#9cc3e2');
       if (ck.lit) {
         const f = Math.sin(this.t * 18) * 1.5;
@@ -904,6 +988,7 @@ export class Game {
       '시트가 가운데 올 때 화면을 눌러 쌓아요',
       '케이크를 문질러 크림을 발라요',
       '딸기, 블루베리, 쌩쌩이를 케이크 위로 끌어요',
+      '초코판에 손가락으로 축하 글씨를 써요',
       '화면을 눌러 초에 불을 붙여요',
       '',
     ][this.sub];

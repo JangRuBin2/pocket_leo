@@ -98,7 +98,7 @@ export default function App() {
   const [toast, setToast] = useState('');
   const [started, setStarted] = useState(false);
   const [muted, setMuted] = useState(false);
-  const [prog, setProg] = useState({ level: 1, xp: 0, need: 30 });
+  const [prog, setProg] = useState({ level: 1, xp: 0, need: 100 });
   const [event, setEvent] = useState(0);
 
   useEffect(() => {
