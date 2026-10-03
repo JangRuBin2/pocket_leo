@@ -1,0 +1,254 @@
+/* 레이아웃: 종이 한 장이 화면 전체. 위에 수치, 가운데 레오, 아래 한 손 독. 크레용 세계 하나로 고정(단일 테마). */
+:root {
+  --paper: #f7f1e3;
+  --ink: #2a2622;
+  --soft: #8c8272;
+  --orange: #e8964a;
+  --pink: #ee8a8a;
+  --blue: #7fa8c9;
+  --green: #9dbf7a;
+  --red: #e2574c;
+  --brown: #9a6a3c;
+  --tan: #e2c08e;
+  --hand: 'Gaegu', 'Comic Sans MS', 'Apple SD Gothic Neo', cursive;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--hand);
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.stage {
+  position: relative;
+  height: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+.world {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px 0;
+  pointer-events: none;
+}
+
+.meters {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 14px;
+}
+
+.meter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.meter-label {
+  width: 3.4em;
+  flex: none;
+}
+
+.meter-track {
+  flex: 1;
+  height: 12px;
+  border: 2px solid var(--ink);
+  border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+.meter-fill {
+  display: block;
+  height: 100%;
+  transition: width 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  background-image: repeating-linear-gradient(115deg, transparent 0 3px, rgba(247, 241, 227, 0.45) 3px 5px);
+}
+
+.meter-fill.low {
+  animation: wobble 0.5s ease-in-out infinite alternate;
+}
+
+.mute,
+.act,
+.start {
+  font-family: var(--hand);
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
+  cursor: pointer;
+}
+
+.mute {
+  pointer-events: auto;
+  flex: none;
+  padding: 4px 10px;
+  font-size: 15px;
+}
+
+.mute[aria-pressed='true'] {
+  color: var(--soft);
+  border-color: var(--soft);
+}
+
+.toast {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 84px;
+  text-align: center;
+  font-size: 20px;
+  font-weight: 700;
+  opacity: 0;
+  transform: translateY(-6px) rotate(-1deg);
+  transition: opacity 0.25s, transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: none;
+  text-wrap: balance;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: none;
+}
+
+.dock {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 0 16px 14px;
+}
+
+.dock-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.act {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 2px 6px;
+  font-size: 17px;
+  min-width: 0;
+  transition: transform 0.3s cubic-bezier(0.34, 1.8, 0.64, 1);
+}
+
+.act:nth-child(even) {
+  border-radius: 15px 225px 15px 255px / 255px 15px 225px 15px;
+}
+
+.act svg {
+  width: 38px;
+  height: 38px;
+}
+
+.act:active,
+.start:active,
+.mute:active {
+  transform: scale(0.88, 0.82);
+  transition-duration: 0.06s;
+}
+
+.act:focus-visible,
+.start:focus-visible,
+.mute:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.soon {
+  margin: 8px 0 0;
+  text-align: center;
+  font-size: 15px;
+  color: var(--soft);
+}
+
+.intro {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 22vh 16px 0;
+  gap: 4px;
+  background: rgba(247, 241, 227, 0.82);
+  text-align: center;
+}
+
+.intro h1 {
+  margin: 0;
+  font-size: 56px;
+  line-height: 1;
+  transform: rotate(-3deg);
+}
+
+.intro p {
+  margin: 0 0 22px;
+  font-size: 22px;
+  color: var(--soft);
+}
+
+.start {
+  padding: 10px 26px;
+  font-size: 24px;
+  background: var(--orange);
+  animation: wobble 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes wobble {
+  from {
+    transform: rotate(-1.5deg) scale(1);
+  }
+  to {
+    transform: rotate(1.5deg) scale(1.04);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .start,
+  .meter-fill.low {
+    animation: none;
+  }
+}
