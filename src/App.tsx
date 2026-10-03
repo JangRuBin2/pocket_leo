@@ -48,6 +48,46 @@ const ACTIONS: { kind: Action; label: string; icon: JSX.Element }[] = [
       </>
     ),
   },
+  {
+    kind: 'walk',
+    label: '산책',
+    icon: (
+      <>
+        <ellipse cx="16" cy="21" rx="6.5" ry="5.5" fill="var(--brown)" />
+        <circle cx="7.5" cy="14" r="3" fill="var(--brown)" />
+        <circle cx="13" cy="9" r="3" fill="var(--brown)" />
+        <circle cx="19" cy="9" r="3" fill="var(--brown)" />
+        <circle cx="24.5" cy="14" r="3" fill="var(--brown)" />
+      </>
+    ),
+  },
+  {
+    kind: 'bath',
+    label: '목욕',
+    icon: (
+      <>
+        <path d="M4 16h24c0 7-4 10-12 10S4 23 4 16z" fill="var(--blue)" />
+        <circle cx="11" cy="10" r="3.5" fill="var(--paper)" stroke="var(--blue)" strokeWidth="1.5" />
+        <circle cx="18" cy="7" r="2.5" fill="var(--paper)" stroke="var(--blue)" strokeWidth="1.5" />
+        <circle cx="22" cy="12" r="3" fill="var(--paper)" stroke="var(--blue)" strokeWidth="1.5" />
+      </>
+    ),
+  },
+  {
+    kind: 'vet',
+    label: '병원',
+    icon: (
+      <>
+        <rect x="5" y="5" width="22" height="22" rx="4" fill="var(--paper)" stroke="var(--green)" strokeWidth="2" />
+        <path d="M16 10v12M10 16h12" stroke="var(--green)" strokeWidth="4.5" strokeLinecap="round" />
+      </>
+    ),
+  },
+  {
+    kind: 'sleep',
+    label: '재우기',
+    icon: <path d="M21 5a11 11 0 1 0 6 16A9 9 0 0 1 21 5z" fill="var(--orange)" stroke="var(--ink)" strokeWidth="1.2" />,
+  },
 ];
 
 export default function App() {
@@ -125,7 +165,6 @@ export default function App() {
             </button>
           ))}
         </div>
-        <p className="soon">산책 · 목욕 · 병원은 다음 버전에 들어와요</p>
       </footer>
 
       {!started && (

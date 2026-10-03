@@ -9,11 +9,11 @@ export interface Stats {
   clean: number;
   energy: number;
 }
-export type Action = 'feed' | 'treat' | 'ball' | 'mom';
-type Mode = 'idle' | 'feed' | 'treat' | 'zoom' | 'ball' | 'mom' | 'sulk';
+export type Action = 'feed' | 'treat' | 'ball' | 'mom' | 'walk' | 'bath' | 'vet' | 'sleep';
+type Mode = 'idle' | 'feed' | 'treat' | 'zoom' | 'ball' | 'mom' | 'sulk' | 'walk' | 'bath' | 'vet' | 'sleep';
 
 interface Part {
-  kind: 'heart' | 'dust' | 'line' | 'crumb';
+  kind: 'heart' | 'dust' | 'line' | 'crumb' | 'drop' | 'bubble';
   x: number;
   y: number;
   vx: number;
@@ -79,6 +79,18 @@ export class Game {
   private chestPet = 0;
   private pokes: number[] = [];
   private vel: P = { x: 0, y: 0 };
+  private bgVet: HTMLCanvasElement[] = [];
+  private sub = 0;
+  private foam = 0;
+  private calm = 0;
+  private dist = 0;
+  private scroll = 0;
+  private hold = 0;
+  private ev = 0;
+  private otherX = W + 80;
+  private other = 0;
+  private walkPoop: number | null = null;
+  private tool: { kind: 'steth' | 'syringe'; x: number; y: number; held: boolean } | null = null;
   private ro: ResizeObserver;
 
   constructor(private canvas: HTMLCanvasElement) {
@@ -178,12 +190,13 @@ export class Game {
     this.canvas.height = Math.round(r.height * dpr);
     this.scale = r.width / W;
     this.H = r.height / this.scale;
-    this.groundY = this.H - 205;
+    this.groundY = this.H - 275;
     this.ctx.setTransform(dpr * this.scale, 0, 0, dpr * this.scale, 0, 0);
     this.bg = [0, 1, 2].map((b) => this.paintBg(b, dpr));
+    this.bgVet = [0, 1, 2].map((b) => this.paintBg(b, dpr, true));
   }
 
-  private paintBg(boil: number, dpr: number) {
+  private paintBg(boil: number, dpr: number, vet = false) {
     const cv = document.createElement('canvas');
     cv.width = this.canvas.width;
     cv.height = this.canvas.height;
@@ -194,6 +207,21 @@ export class Game {
     const g = this.groundY;
     ctx.fillStyle = PAPER;
     ctx.fillRect(0, 0, W, this.H);
+    if (vet) {
+      // 동물병원: 초록 십자 간판, 진찰대
+      const sy = Math.max(120, g - 330);
+      c.rect(34, sy, 84, 84, '#5f8f6a', 140, '#dcebd9');
+      c.rect(66, sy + 14, 20, 56, '#5f8f6a', 141, '#7fb08a');
+      c.rect(48, sy + 32, 56, 20, '#5f8f6a', 142, '#7fb08a');
+      c.rect(W - 120, sy + 10, 86, 60, '#8a9aa8', 143);
+      c.line([[W - 110, sy + 30], [W - 46, sy + 30]], '#8a9aa8', 2, 144);
+      c.line([[W - 110, sy + 46], [W - 64, sy + 46]], '#8a9aa8', 2, 145);
+      const ty = g + 22;
+      c.rect(50, ty, 250, 16, '#6f8496', 146, '#c9d9e4');
+      c.line([[70, ty + 16], [62, ty + 62]], '#6f8496', 2.4, 147);
+      c.line([[280, ty + 16], [288, ty + 62]], '#6f8496', 2.4, 148);
+      return cv;
+    }
     // 창문
     const wy = Math.max(120, g - 330);
     c.rect(34, wy, 104, 112, '#8a9aa8', 100, '#bcd6e6');
@@ -242,6 +270,24 @@ export class Game {
     this.ptr = { ...p, sx: p.x, sy: p.y, moved: 0, t: this.t, onLeo: false };
     this.vel = { x: 0, y: 0 };
 
+    if (this.mode === 'sleep') {
+      this.wake('레오가 깼어요');
+      return;
+    }
+    if (this.tool && Math.hypot(p.x - this.tool.x, p.y - this.tool.y) < 52) {
+      this.tool.held = true;
+      return;
+    }
+    if (this.walkPoop !== null && Math.hypot(p.x - this.walkPoop, p.y - (this.gy - 10)) < 40) {
+      const x = this.walkPoop;
+      this.walkPoop = null;
+      this.sub = 0;
+      this.sound.pop();
+      buzz(15);
+      for (let i = 0; i < 8; i++) this.emit('dust', x, this.gy - 12, rand(-90, 90), rand(-140, -30), 0.6);
+      this.say('매너 견주!', x, this.gy - 50, 22, '#6b8f5a');
+      return;
+    }
     if (this.treat && !this.treat.dropped && Math.hypot(p.x - this.treat.x, p.y - this.treat.y) < 48) {
       this.treat.held = true;
       return;
@@ -279,6 +325,11 @@ export class Game {
     this.ptr.x = p.x;
     this.ptr.y = p.y;
 
+    if (this.tool?.held) {
+      this.tool.x = p.x;
+      this.tool.y = p.y;
+      return;
+    }
     if (this.treat?.held) {
       this.treat.x = p.x;
       this.treat.y = p.y;
@@ -296,6 +347,10 @@ export class Game {
     const ptr = this.ptr;
     this.ptr = null;
     if (!ptr) return;
+    if (this.tool?.held) {
+      this.tool.held = false;
+      return;
+    }
     if (this.treat?.held) {
       this.treat.held = false;
       this.treat.dropped = true;
@@ -317,6 +372,32 @@ export class Game {
   };
 
   private pet(p: P, dist: number) {
+    if (this.mode === 'bath') {
+      if (this.sub === 0) {
+        this.foam = Math.min(1, this.foam + dist / 1100);
+        this.petDist += dist;
+        if (this.petDist > 26) {
+          this.petDist = 0;
+          this.sound.bubble();
+          buzz(5);
+          this.leo.boop(0.25);
+          this.emit('bubble', p.x + rand(-14, 14), p.y, rand(-20, 20), rand(-60, -25), 1.2);
+        }
+      }
+      return;
+    }
+    if ((this.mode === 'vet' && this.sub === 1) || (this.mode === 'walk' && this.sub === 2)) {
+      this.calm = Math.min(1, this.calm + dist / 800);
+      this.petDist += dist;
+      if (this.petDist > 30) {
+        this.petDist = 0;
+        this.sound.note(this.petNote++ % 14);
+        buzz(8);
+        this.leo.boop(0.3);
+        this.emit('heart', p.x + rand(-12, 12), p.y - 14, rand(-25, 25), rand(-95, -60), 1.1);
+      }
+      return;
+    }
     if (this.mode === 'sulk') {
       if (Math.random() < 0.03) this.say('흥', this.leo.x, this.gy - 190, 24, INK);
       return;
@@ -384,6 +465,59 @@ export class Game {
     }
     const leo = this.leo;
     this.barksLeft = 0;
+    this.sub = 0;
+    this.calm = 0;
+    if (kind === 'walk') {
+      if (this.stats.energy < 10) {
+        this.onToast('레오가 지쳤어요. 재우거나 쌩쌩이를 주세요');
+        return;
+      }
+      this.mode = 'walk';
+      this.dist = 0;
+      this.scroll = 0;
+      this.ev = 0;
+      this.other = 0;
+      this.otherX = W + 80;
+      this.walkPoop = null;
+      leo.x = 130;
+      leo.dir = 1;
+      leo.targetX = null;
+      leo.happy(2);
+      this.sound.jingle();
+      this.onToast('화면을 꾹 누르고 있으면 걸어요');
+      return;
+    }
+    if (kind === 'bath') {
+      this.mode = 'bath';
+      this.foam = 0;
+      leo.goTo(W / 2 - 20, undefined, 200);
+      this.sound.pop();
+      this.onToast('레오를 문질러서 거품을 내주세요');
+      return;
+    }
+    if (kind === 'vet') {
+      this.mode = 'vet';
+      this.hold = 0;
+      leo.x = 175;
+      leo.dir = 1;
+      leo.targetX = null;
+      this.tool = { kind: 'steth', x: W - 70, y: this.gy - 250, held: false };
+      this.sound.pop();
+      this.onToast('청진기를 레오 가슴에 대주세요');
+      return;
+    }
+    if (kind === 'sleep') {
+      if (this.stats.energy > 95) {
+        this.onToast('쌩쌩해서 잘 생각이 없어요');
+        return;
+      }
+      this.mode = 'sleep';
+      this.modeT = 0;
+      leo.targetX = null;
+      leo.squash.target = 0.84;
+      this.onToast('쉿, 레오가 자요. 화면을 누르면 깨워요');
+      return;
+    }
     if (kind === 'feed') {
       if (this.stats.hunger > 92) {
         this.onToast('배불러서 밥그릇은 쳐다도 안 봐요');
@@ -420,11 +554,36 @@ export class Game {
       this.sound.dingdong();
       this.say('엄마다!!!', leo.x, this.gy - 205, 30, '#d1483a');
       leo.happy(6);
-      leo.goTo(W - 120, () => {
-        this.modeT = 4;
+      leo.goTo(W - 130, () => {
+        this.sub = 1;
+        this.modeT = 0;
         this.tickT = 0;
       }, 400);
     }
+  }
+
+  private wake(msg: string) {
+    this.leo.squash.target = 1;
+    this.leo.boop(0.8);
+    this.mode = 'idle';
+    this.idleT = 3;
+    this.onToast(msg);
+  }
+
+  private endScene(msg: string, d: Partial<Stats>) {
+    const leo = this.leo;
+    leo.treadmill = false;
+    leo.tremble = 0;
+    this.tool = null;
+    this.walkPoop = null;
+    this.mode = 'idle';
+    this.idleT = 3;
+    leo.x = clamp(leo.x, 60, W - 120);
+    leo.happy(2);
+    leo.jump(-320);
+    this.sound.jingle();
+    this.onToast(msg);
+    this.bump(d);
   }
 
   private bark() {
@@ -492,6 +651,18 @@ export class Game {
     leo.eye = mood < 25 ? 'squint' : 'open';
     leo.tailSpeed = this.mode === 'mom' || this.mode === 'zoom' ? 26 : 5 + mood * 0.1;
     leo.tailAmp.target = this.mode === 'mom' ? 0.6 : this.mode === 'sulk' ? 0.03 : 0.12 + mood * 0.003;
+
+    leo.tremble = 0;
+    if (this.mode === 'bath' || this.mode === 'sleep') {
+      leo.eye = 'squint';
+      leo.pant = false;
+      leo.tailAmp.target = 0.03;
+    }
+    if (this.mode === 'vet') {
+      leo.pant = false;
+      leo.tailAmp.target = 0.02;
+      leo.tremble = this.sub === 0 ? 1 : this.sub === 1 ? 1 - this.calm : this.sub === 2 ? 0.3 : 0;
+    }
 
     // 시선
     let look: P | null = null;
@@ -643,23 +814,192 @@ export class Game {
         break;
       }
       case 'mom': {
-        if (this.modeT <= 0) break;
-        this.modeT -= dt;
-        this.tickT -= dt;
+        if (this.sub === 0) break;
+        this.modeT += dt;
         leo.dir = 1;
-        if (this.tickT <= 0) {
-          this.tickT = 0.42;
-          leo.jump(-360);
-          this.bark();
-          this.emit('heart', leo.x + rand(-40, 40), g - 170, rand(-40, 40), rand(-120, -70), 1.2);
-          this.emit('heart', leo.x + rand(-40, 40), g - 140, rand(-40, 40), rand(-120, -70), 1.2);
-        }
-        if (this.modeT <= 0) {
+        if (this.modeT < 1.7) {
+          this.tickT -= dt;
+          if (this.tickT <= 0) {
+            this.tickT = 0.42;
+            leo.jump(-360);
+            this.bark();
+            this.emit('heart', leo.x + rand(-40, 40), g - 170, rand(-40, 40), rand(-120, -70), 1.2);
+          }
+        } else if (this.modeT < 3.0) {
+          // 빙글빙글
+          if (this.sub === 1) {
+            this.sub = 2;
+            this.sound.whoosh();
+            this.say('빙글빙글', leo.x, g - 215, 26, '#d1483a');
+          }
+          leo.spin = ((this.modeT - 1.7) / 1.3) * Math.PI * 4;
+          if (Math.random() < dt * 10) this.emit('dust', leo.x + rand(-40, 40), g - 6, rand(-80, 80), -60, 0.5);
+        } else if (this.modeT < 6.0) {
+          // 발라당 배 까고 등으로 뭉개기
+          if (this.sub === 2) {
+            this.sub = 3;
+            leo.spin = 0;
+            leo.belly = true;
+            leo.happy(3.2);
+            this.sound.jingle();
+            buzz(40);
+            this.say('발라당', leo.x, g - 150, 28, '#d1483a');
+          }
+          if (Math.random() < dt * 5)
+            this.emit('heart', leo.x + rand(-60, 60), g - 100, rand(-30, 30), rand(-110, -60), 1.2);
+        } else {
+          leo.belly = false;
+          leo.spin = 0;
+          leo.jump(-300);
           this.mode = 'idle';
           this.idleT = 3;
           this.onToast('엄마가 세상에서 제일 좋대요. 약았다 약았어');
           this.bump({ mood: 30 });
         }
+        break;
+      }
+      case 'bath': {
+        if (this.sub === 0) {
+          if (this.foam >= 1) {
+            this.sub = 1;
+            this.sound.jingle();
+            this.onToast('거품 완성! 레오 위를 꾹 눌러 물로 헹궈주세요');
+          }
+        } else if (this.sub === 1) {
+          if (this.ptr) {
+            this.tickT -= dt;
+            if (this.tickT <= 0) {
+              this.tickT = 0.12;
+              this.sound.shower();
+            }
+            for (let i = 0; i < 3; i++) this.emit('drop', this.ptr.x + rand(-26, 26), g - 300, rand(-10, 10), rand(300, 420), 0.7);
+            if (Math.abs(this.ptr.x - leo.x) < 85) this.foam -= dt * 0.45;
+          }
+          if (this.foam <= 0) {
+            this.foam = 0;
+            this.sub = 2;
+            this.modeT = 1.3;
+            this.say('탈탈탈!', leo.x, g - 215, 28, '#3f7fb5');
+            buzz(120);
+          }
+        } else {
+          this.modeT -= dt;
+          leo.tremble = 4;
+          for (let i = 0; i < 2; i++)
+            this.emit('drop', leo.x + rand(-30, 30), g - rand(60, 160), rand(-260, 260), rand(-200, -40), 0.6);
+          if (this.modeT <= 0) {
+            this.stats.clean = 100;
+            this.say('뽀송뽀송', leo.x, g - 215, 28, '#3f7fb5');
+            this.endScene('목욕 끝! 싫어했지만 뽀송해졌어요', { mood: -4 });
+          }
+        }
+        break;
+      }
+      case 'walk': {
+        const walking = !!this.ptr && this.sub === 0;
+        leo.treadmill = walking;
+        if (walking) {
+          this.dist += dt * 5.5;
+          this.scroll += dt * 120;
+        }
+        if (this.other === 1) this.otherX += (W - 80 - this.otherX) * Math.min(1, dt * 4);
+        if (this.other === 2) {
+          this.otherX += dt * 160;
+          if (this.otherX > W + 90) this.other = 0;
+        }
+        if (this.sub === 1) {
+          this.modeT -= dt;
+          leo.headY.target = 26;
+          if (this.modeT <= 0) {
+            this.sub = 0;
+            this.bump({ mood: 5 });
+          }
+        } else if (this.sub === 2) {
+          this.tickT -= dt;
+          if (this.tickT <= 0) {
+            this.tickT = 0.3;
+            this.bark();
+          }
+          if (this.calm >= 1) {
+            this.sub = 0;
+            this.other = 2;
+            this.say('휴…', leo.x, g - 210, 24, INK);
+          }
+        }
+        if (this.sub === 0) {
+          if (this.dist >= 25 && !(this.ev & 1)) {
+            this.ev |= 1;
+            this.sub = 1;
+            this.modeT = 1.8;
+            this.say('킁킁', leo.x + 50, g - 60, 24, '#6b8f5a');
+          } else if (this.dist >= 55 && !(this.ev & 2)) {
+            this.ev |= 2;
+            this.sub = 2;
+            this.calm = 0;
+            this.other = 1;
+            this.tickT = 0;
+            this.onToast('다른 강아지다! 레오를 쓰다듬어 진정시켜 주세요');
+          } else if (this.dist >= 80 && !(this.ev & 4)) {
+            this.ev |= 4;
+            this.sub = 3;
+            this.walkPoop = leo.x - 70;
+            this.sound.pop();
+            this.onToast('응가! 눌러서 봉투에 담아주세요');
+          } else if (this.dist >= 100) {
+            this.endScene('산책 끝! 기분 최고', { mood: 25, energy: -20, clean: -10, hunger: -8 });
+          }
+        }
+        break;
+      }
+      case 'vet': {
+        const tl = this.tool;
+        if (this.sub === 0 && tl) {
+          if (tl.held && Math.hypot(tl.x - leo.x, tl.y - (g - 82 * LEO_SCALE)) < 48) {
+            this.hold += dt;
+            this.tickT -= dt;
+            if (this.tickT <= 0) {
+              this.tickT = 0.5;
+              this.sound.thump();
+              buzz(20);
+              this.say('두근', leo.x + rand(-50, 50), g - rand(150, 200), 22, '#d1483a');
+            }
+            if (this.hold >= 1.7) {
+              this.sub = 1;
+              this.tool = null;
+              this.onToast('심장 튼튼! 겁먹었으니 쓰다듬어서 진정시켜 주세요');
+            }
+          }
+        } else if (this.sub === 1) {
+          if (this.calm >= 1) {
+            this.sub = 2;
+            this.tool = { kind: 'syringe', x: W - 70, y: g - 250, held: false };
+            this.onToast('지금이에요! 주사기를 레오 엉덩이에 콕');
+          }
+        } else if (this.sub === 2 && tl) {
+          if (tl.held && Math.hypot(tl.x - (leo.x + 34), tl.y - (g - 48 * LEO_SCALE)) < 44) {
+            this.tool = null;
+            this.sub = 3;
+            this.modeT = 1.5;
+            this.sound.yelp();
+            buzz(80);
+            leo.jump(-420);
+            this.say('깽!', leo.x, g - 215, 34, INK);
+          }
+        } else if (this.sub === 3) {
+          this.modeT -= dt;
+          if (this.modeT <= 0) this.endScene('주사 끝! 잘 참았어요. 쌩쌩이로 달래주세요', { mood: -10, energy: 5 });
+        }
+        break;
+      }
+      case 'sleep': {
+        this.modeT += dt;
+        this.stats.energy = Math.min(100, this.stats.energy + dt * 5);
+        this.stats.mood = Math.min(100, this.stats.mood + dt * 0.5);
+        if (this.modeT > 1.3) {
+          this.modeT = 0;
+          this.say('z', leo.x + 45, g - 190, 26, '#6f6a8a');
+        }
+        if (this.stats.energy >= 100) this.wake('푹 자고 일어났어요');
         break;
       }
       case 'sulk': {
@@ -682,6 +1022,7 @@ export class Game {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       if (p.kind === 'crumb' || p.kind === 'dust') p.vy += 320 * dt;
+      if (p.kind === 'drop') p.vy += 900 * dt;
     }
     this.parts = this.parts.filter((p) => p.t < p.life);
     for (const f of this.texts) {
@@ -695,15 +1036,16 @@ export class Game {
     const ctx = this.ctx;
     const c = this.crayon;
     const g = this.gy;
-    const bg = this.bg[c.boil];
-    if (bg) {
+    const bg = this.mode === 'vet' ? this.bgVet[c.boil] : this.bg[c.boil];
+    if (this.mode === 'walk') this.drawWalk();
+    else if (bg) {
       ctx.save();
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.drawImage(bg, 0, 0);
       ctx.restore();
     }
 
-    for (const x of this.poops) {
+    for (const x of this.mode === 'walk' || this.mode === 'vet' ? [] : this.poops) {
       c.blob(x, g - 6, 15, 7, { fill: '#8a5a33', edge: '#5e3b1e', seed: 200 });
       c.blob(x, g - 15, 10.5, 6, { fill: '#8a5a33', edge: '#5e3b1e', seed: 201 });
       c.blob(x + 1, g - 23, 5.5, 4.5, { fill: '#8a5a33', edge: '#5e3b1e', seed: 202 });
@@ -714,6 +1056,8 @@ export class Game {
       c.blob(this.bowl, g - 16, 21, 6, { fill: '#9a6a3c', seed: 210 });
       c.blob(this.bowl, g - 8, 27, 11, { fill: '#7fa8c9', edge: '#4f7896', seed: 211, hatch: 0.3 });
     }
+
+    this.drawSceneProps();
 
     const tr = this.treat;
     if (tr) {
@@ -778,6 +1122,22 @@ export class Game {
         ctx.moveTo(0, 0);
         ctx.lineTo(Math.sign(p.vx) * -34, 0);
         ctx.stroke();
+      } else if (p.kind === 'drop') {
+        ctx.strokeStyle = '#6fa3cf';
+        ctx.lineWidth = 2.4;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-p.vx * 0.02, -p.vy * 0.02 - 4);
+        ctx.stroke();
+      } else if (p.kind === 'bubble') {
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#8fb9d8';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, 4 + p.t * 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
       } else {
         ctx.fillStyle = p.kind === 'crumb' ? '#9a6a3c' : '#c9bda4';
         ctx.beginPath();
@@ -802,6 +1162,114 @@ export class Game {
       ctx.strokeText(f.text, 0, 0);
       ctx.fillStyle = f.color;
       ctx.fillText(f.text, 0, 0);
+      ctx.restore();
+    }
+
+    if (this.mode === 'sleep') {
+      ctx.fillStyle = 'rgba(38, 36, 66, 0.38)';
+      ctx.fillRect(0, 0, W, this.H);
+    }
+  }
+
+  /** 산책길: 스크롤되는 나무, 구름, 풀 */
+  private drawWalk() {
+    const ctx = this.ctx;
+    const c = this.crayon;
+    const g = this.gy;
+    const wrap = (v: number, m: number) => ((v % m) + m) % m;
+    ctx.fillStyle = PAPER;
+    ctx.fillRect(0, 0, W, this.H);
+    c.blob(W - 62, Math.max(150, g - 330), 24, 24, { fill: '#f2c84b', edge: '#d9a520', seed: 300, fur: 0.35 });
+    for (let i = 0; i < 3; i++) {
+      const x = wrap(i * 190 - this.scroll * 0.2, 570) - 90;
+      c.blob(x, Math.max(170, g - 300) + i * 30, 36, 13, { fill: '#dbe6ee', seed: 301 + i, hatch: 0.2 });
+    }
+    for (let i = 0; i < 4; i++) {
+      const x = wrap(i * 230 - this.scroll, 920) - 120;
+      c.rect(x - 7, g - 112, 14, 122, '#8a5a33', 310 + i, '#c79f62');
+      c.blob(x, g - 150, 46, 44, { fill: '#9dbf7a', edge: '#6b8f5a', seed: 320 + i, fur: 0.18 });
+    }
+    const pts: number[][] = [];
+    for (let x = -5; x <= W + 5; x += 26) pts.push([x, g + 10]);
+    c.line(pts, '#8a9a6a', 2.4, 330, 2.2);
+    for (let i = 0; i < 10; i++) {
+      const x = wrap(i * 47 - this.scroll, 470) - 40;
+      c.line([[x, g + 12], [x + 3, g]], '#7fa35a', 2.2, 331 + i, 1);
+      c.line([[x + 6, g + 12], [x + 10, g + 3]], '#7fa35a', 2.2, 345 + i, 1);
+    }
+    ctx.save();
+    ctx.font = '700 22px Gaegu, "Comic Sans MS", cursive';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = INK;
+    ctx.fillText(`산책 ${Math.min(100, Math.floor(this.dist))}%`, W / 2, 172);
+    ctx.restore();
+  }
+
+  /** 욕조·거품, 다른 강아지, 산책 응가, 진찰 도구 */
+  private drawSceneProps() {
+    const ctx = this.ctx;
+    const c = this.crayon;
+    const g = this.gy;
+    const leo = this.leo;
+    if (this.mode === 'bath') {
+      const n = Math.round(this.foam * 30);
+      for (let i = 0; i < n; i++) {
+        const a = i * 2.4;
+        const r = 18 + ((i * 37) % 60);
+        const bx = leo.x + Math.cos(a) * r * 0.9;
+        const by = g - 95 * LEO_SCALE + Math.sin(a) * r * 1.25 + Math.sin(this.t * 3 + i) * 1.5;
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#8fb9d8';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(bx, by, 6 + ((i * 13) % 7), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+      c.blob(leo.x, g - 12, 104, 30, { fill: '#a9cde4', edge: '#5f8fb0', seed: 240, hatch: 0.15 });
+      c.blob(leo.x, g - 30, 98, 9, { fill: '#e6f1f7', edge: '#5f8fb0', seed: 241, hatch: 0 });
+    }
+    if (this.mode === 'walk') {
+      if (this.other) {
+        const ox = this.otherX;
+        const hop = Math.abs(Math.sin(this.t * 9)) * 5;
+        c.blob(ox + 6, g - 30 - hop, 30, 22, { fill: '#7b756f', edge: INK, seed: 250, fur: 0.25 });
+        c.blob(ox - 22, g - 58 - hop, 19, 17, { fill: '#7b756f', edge: INK, seed: 251, fur: 0.25 });
+        c.blob(ox - 12, g - 74 - hop, 6, 10, { fill: '#55504b', seed: 252, rot: 0.4 });
+        c.line([[ox - 4, g - 10], [ox - 4, g]], INK, 3, 253, 0.5);
+        c.line([[ox + 20, g - 10], [ox + 20, g]], INK, 3, 254, 0.5);
+        ctx.fillStyle = INK;
+        ctx.beginPath();
+        ctx.arc(ox - 28, g - 62 - hop, 2.6, 0, Math.PI * 2);
+        ctx.arc(ox - 40, g - 55 - hop, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      if (this.walkPoop !== null) {
+        const x = this.walkPoop;
+        c.blob(x, g - 6, 15, 7, { fill: '#8a5a33', edge: '#5e3b1e', seed: 200 });
+        c.blob(x, g - 15, 10.5, 6, { fill: '#8a5a33', edge: '#5e3b1e', seed: 201 });
+        c.blob(x + 1, g - 23, 5.5, 4.5, { fill: '#8a5a33', edge: '#5e3b1e', seed: 202 });
+      }
+      if (this.ev & 1 && this.sub === 1) {
+        c.line([[leo.x + 62, g + 8], [leo.x + 62, g - 16]], '#7fa35a', 2.4, 260, 1);
+        c.blob(leo.x + 62, g - 22, 8, 8, { fill: '#ee8a8a', edge: '#c9566a', seed: 261, fur: 0.4 });
+      }
+    }
+    const tl = this.tool;
+    if (tl) {
+      ctx.save();
+      ctx.translate(tl.x, tl.y + (tl.held ? 0 : Math.sin(this.t * 3) * 4));
+      if (tl.kind === 'steth') {
+        c.line([[0, -8], [10, -50], [34, -70]], '#4a4640', 3.4, 270, 1.5);
+        c.blob(0, 0, 17, 17, { fill: '#b8c2ca', edge: '#4a4640', seed: 271, hatch: 0.6 });
+        c.blob(0, 0, 8, 8, { fill: '#e9eef2', edge: '#4a4640', seed: 272 });
+      } else {
+        ctx.rotate(2.2);
+        c.rect(-8, -34, 16, 40, '#4a4640', 273, '#bcd6e6');
+        c.line([[0, 6], [0, 26]], '#4a4640', 2, 274, 0.4);
+        c.line([[-10, -34], [10, -34]], '#4a4640', 3, 275, 0.6);
+        c.line([[0, -34], [0, -46]], '#4a4640', 3, 276, 0.6);
+      }
       ctx.restore();
     }
   }

@@ -22,6 +22,7 @@ const PROGS = [
 const PENTA = [72, 74, 77, 79, 81, 84, 86];
 const ALBERTI = [0, 2, 1, 2, 3, 2, 1, 2];
 const BEAT = 60 / 76;
+const rand2 = (a: number, b: number) => a + Math.random() * (b - a);
 
 export class Sound {
   ctx: AudioContext | null = null;
@@ -224,15 +225,15 @@ export class Sound {
     const c = this.ctx;
     if (!c) return;
     const t = this.now();
-    const dur = 0.17;
+    const dur = 0.14;
     const mix = c.createGain();
     for (const det of [1, 1.017]) {
       const o = c.createOscillator();
       o.type = 'sawtooth';
-      o.frequency.setValueAtTime(360 * p * det, t);
-      o.frequency.exponentialRampToValueAtTime(820 * p * det, t + 0.028);
-      o.frequency.exponentialRampToValueAtTime(560 * p * det, t + 0.09);
-      o.frequency.exponentialRampToValueAtTime(260 * p * det, t + dur);
+      o.frequency.setValueAtTime(520 * p * det, t);
+      o.frequency.exponentialRampToValueAtTime(1180 * p * det, t + 0.025);
+      o.frequency.exponentialRampToValueAtTime(820 * p * det, t + 0.08);
+      o.frequency.exponentialRampToValueAtTime(400 * p * det, t + dur);
       o.connect(mix);
       o.start(t);
       o.stop(t + dur + 0.03);
@@ -251,9 +252,9 @@ export class Sound {
     e.gain.setValueAtTime(0.5, t + 0.06);
     e.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     for (const [freq, q, g] of [
-      [1050, 3.5, 1],
-      [2500, 5, 0.6],
-      [3600, 6, 0.25],
+      [1450, 3.5, 1],
+      [3100, 5, 0.6],
+      [4400, 6, 0.25],
     ]) {
       const f = c.createBiquadFilter();
       f.type = 'bandpass';
@@ -268,11 +269,7 @@ export class Sound {
       fg.connect(e);
     }
     e.connect(this.sfx);
-    const s = c.createGain();
-    s.gain.value = 0.25;
-    e.connect(s);
-    s.connect(this.rev);
-    this.hit(t, 0.09, 0.16, 1900, 'bandpass', this.sfx);
+    this.hit(t, 0.07, 0.14, 2600, 'bandpass', this.sfx);
   }
 
   /** 쓰다듬을 때 올라가는 실로폰 음 */
@@ -337,6 +334,33 @@ export class Sound {
     lfo.start(t);
     o.stop(t + 0.75);
     lfo.stop(t + 0.75);
+  }
+
+  bubble() {
+    if (!this.ctx) return;
+    const t = this.now();
+    const o = this.tone(rand2(700, 1100), t, 0.09, 0.08, 'sine', this.sfx, 0);
+    o.frequency.exponentialRampToValueAtTime(rand2(1500, 2100), t + 0.07);
+  }
+
+  shower() {
+    if (!this.ctx) return;
+    this.hit(this.now(), 0.16, 0.05, 4200, 'highpass', this.sfx);
+  }
+
+  thump() {
+    if (!this.ctx) return;
+    const t = this.now();
+    this.tone(72, t, 0.14, 0.5, 'sine', this.sfx, 0);
+    this.tone(60, t + 0.16, 0.16, 0.35, 'sine', this.sfx, 0);
+  }
+
+  yelp() {
+    if (!this.ctx) return;
+    const t = this.now();
+    const o = this.tone(1300, t, 0.28, 0.22, 'triangle', this.sfx, 0);
+    o.frequency.exponentialRampToValueAtTime(2100, t + 0.05);
+    o.frequency.exponentialRampToValueAtTime(900, t + 0.26);
   }
 
   dingdong() {
