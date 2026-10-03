@@ -219,28 +219,60 @@ export class Sound {
     return this.ctx ? this.ctx.currentTime : 0;
   }
 
+  /** 소형견 짖음: 톱니파 2개(살짝 어긋난 음정) + 왜곡 + 포먼트 필터 2개 + 숨소리 */
   bark(p = 1) {
     const c = this.ctx;
     if (!c) return;
     const t = this.now();
-    const o = c.createOscillator();
-    o.type = 'square';
-    o.frequency.setValueAtTime(640 * p, t);
-    o.frequency.exponentialRampToValueAtTime(330 * p, t + 0.09);
-    const f = c.createBiquadFilter();
-    f.type = 'bandpass';
-    f.frequency.value = 1100;
-    f.Q.value = 1.4;
+    const dur = 0.17;
+    const mix = c.createGain();
+    for (const det of [1, 1.017]) {
+      const o = c.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(360 * p * det, t);
+      o.frequency.exponentialRampToValueAtTime(820 * p * det, t + 0.028);
+      o.frequency.exponentialRampToValueAtTime(560 * p * det, t + 0.09);
+      o.frequency.exponentialRampToValueAtTime(260 * p * det, t + dur);
+      o.connect(mix);
+      o.start(t);
+      o.stop(t + dur + 0.03);
+    }
+    const shape = c.createWaveShaper();
+    const curve = new Float32Array(256);
+    for (let i = 0; i < 256; i++) {
+      const x = (i / 255) * 2 - 1;
+      curve[i] = Math.tanh(x * 4);
+    }
+    shape.curve = curve;
+    mix.connect(shape);
     const e = c.createGain();
     e.gain.setValueAtTime(0.0001, t);
-    e.gain.exponentialRampToValueAtTime(0.3, t + 0.008);
-    e.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
-    o.connect(f);
-    f.connect(e);
+    e.gain.exponentialRampToValueAtTime(0.5, t + 0.007);
+    e.gain.setValueAtTime(0.5, t + 0.06);
+    e.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    for (const [freq, q, g] of [
+      [1050, 3.5, 1],
+      [2500, 5, 0.6],
+      [3600, 6, 0.25],
+    ]) {
+      const f = c.createBiquadFilter();
+      f.type = 'bandpass';
+      f.frequency.setValueAtTime(freq * 0.8, t);
+      f.frequency.linearRampToValueAtTime(freq * 1.15, t + 0.04);
+      f.frequency.linearRampToValueAtTime(freq * 0.85, t + dur);
+      f.Q.value = q;
+      const fg = c.createGain();
+      fg.gain.value = g;
+      shape.connect(f);
+      f.connect(fg);
+      fg.connect(e);
+    }
     e.connect(this.sfx);
-    o.start(t);
-    o.stop(t + 0.2);
-    this.hit(t, 0.05, 0.05, 2500, 'highpass', this.sfx);
+    const s = c.createGain();
+    s.gain.value = 0.25;
+    e.connect(s);
+    s.connect(this.rev);
+    this.hit(t, 0.09, 0.16, 1900, 'bandpass', this.sfx);
   }
 
   /** 쓰다듬을 때 올라가는 실로폰 음 */

@@ -719,10 +719,35 @@ export class Game {
     if (tr) {
       ctx.save();
       ctx.translate(tr.x, tr.y);
-      ctx.rotate(tr.held ? Math.sin(this.t * 14) * 0.15 : -0.5);
-      c.blob(0, 0, 21, 7.5, { fill: '#c98a4a', edge: '#8a5a2a', seed: 220, hatch: 0.2 });
-      c.blob(-17, 0, 6.5, 9.5, { fill: '#e2b377', edge: '#8a5a2a', seed: 221 });
-      c.blob(17, 0, 6.5, 9.5, { fill: '#e2b377', edge: '#8a5a2a', seed: 222 });
+      ctx.rotate(tr.held ? Math.sin(this.t * 14) * 0.15 : Math.sin(this.t * 2.5) * 0.12);
+      // 쌩쌩이: 갈색 하트
+      const hp = () => {
+        ctx.beginPath();
+        ctx.moveTo(0, 15);
+        ctx.bezierCurveTo(-27, -4, -15, -24, 0, -9);
+        ctx.bezierCurveTo(15, -24, 27, -4, 0, 15);
+      };
+      ctx.save();
+      hp();
+      ctx.clip();
+      ctx.fillStyle = '#a8703c';
+      ctx.fillRect(-26, -24, 52, 42);
+      ctx.strokeStyle = '#8a5527';
+      ctx.lineWidth = 2.6;
+      ctx.globalAlpha = 0.7;
+      ctx.beginPath();
+      for (let d = -40; d < 40; d += 5) {
+        const j = ((c.boil * 7 + d * 13) % 5) * 0.5;
+        ctx.moveTo(d + j - 12, 20);
+        ctx.lineTo(d + j + 12, -26);
+      }
+      ctx.stroke();
+      ctx.restore();
+      hp();
+      ctx.strokeStyle = '#6b3f1c';
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
       ctx.restore();
     }
     const b = this.ball;

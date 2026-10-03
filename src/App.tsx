@@ -24,11 +24,7 @@ const ACTIONS: { kind: Action; label: string; icon: JSX.Element }[] = [
     label: '쌩쌩이',
     icon: (
       <>
-        <rect x="8" y="13" width="16" height="6" rx="3" fill="var(--brown)" />
-        <circle cx="7" cy="12" r="3.4" fill="var(--tan)" />
-        <circle cx="7" cy="20" r="3.4" fill="var(--tan)" />
-        <circle cx="25" cy="12" r="3.4" fill="var(--tan)" />
-        <circle cx="25" cy="20" r="3.4" fill="var(--tan)" />
+        <path d="M16 26C3 17 6 6 16 12c10-6 13 5 0 14z" fill="var(--brown)" stroke="var(--ink)" strokeWidth="1.2" strokeLinejoin="round" />
       </>
     ),
   },
