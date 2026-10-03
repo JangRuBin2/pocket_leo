@@ -104,6 +104,9 @@ export class Game {
   onLevelUp: (level: number, game: EventGame) => void = () => {};
   private lastGame: EventGame | null = null;
   private kisses = 0;
+  private trickN = 0;
+  private looking = false;
+  private patience = 0.6;
   private anger = 0;
   private growling = false;
   private rageBack = false;
@@ -810,6 +813,9 @@ export class Game {
     this.sub = 0;
     this.hold = 0;
     this.kisses = 0;
+    this.trickN = 0;
+    this.looking = false;
+    this.tickT = 1;
     this.barksLeft = 0;
     leo.x = 150;
     leo.dir = 1;
@@ -821,59 +827,87 @@ export class Game {
   private trickDown(p: P) {
     const leo = this.leo;
     const g = this.gy;
-    if (this.sub === 2) {
+    if (this.sub === 1) {
+      // 기다려: 연타로 참을성을 채운다
+      this.patience = Math.min(1, this.patience + 0.09);
+      leo.boop(0.2);
+      this.sound.note(Math.floor(this.patience * 10));
+      buzz(6);
+    } else if (this.sub === 2) {
       if (Math.hypot(p.x - (leo.x + 36), p.y - (g - 52 * LEO_SCALE)) < 56) {
         if (leo.paw.target > 0.5) {
-          this.sub = 3;
-          this.sound.jingle();
+          this.trickN++;
+          this.sound.pop();
           buzz(30);
-          leo.happy(1.2);
-          this.say('손!', leo.x + 60, g - 120, 34, '#6b8f5a');
-          this.onToast('마지막 개인기! 레오 주둥이를 눌러 뽀뽀 3번');
+          leo.paw.target = 0;
+          this.tickT = rand(0.6, 1.5);
+          this.say(`손! ${this.trickN}/3`, leo.x + 60, g - 120, 30, '#6b8f5a');
+          if (this.trickN >= 3) {
+            this.sub = 3;
+            this.kisses = 0;
+            this.modeT = 0;
+            this.sound.jingle();
+            leo.happy(1.2);
+            this.onToast('마지막은 뽀뽀! 요리조리 피하는 주둥이에 4번 쪽');
+          }
         } else {
-          this.say('아직!', leo.x + 60, g - 110, 22, INK);
+          this.trickN = 0;
+          this.sound.boing();
+          this.say('아직! 처음부터', leo.x + 60, g - 110, 22, INK);
         }
       }
     } else if (this.sub === 3) {
-      if (Math.hypot(p.x - leo.x, p.y - (g - 116 * LEO_SCALE)) < 52) {
+      if (Math.hypot(p.x - leo.x, p.y - (g - 116 * LEO_SCALE)) < 44) {
         this.kisses++;
         this.sound.bubble();
         this.sound.note(6 + this.kisses);
         buzz(25);
-        leo.happy(1.2);
+        leo.happy(1);
         leo.boop(0.5);
         this.say('쪽!', leo.x + rand(-40, 40), g - 200, 32, '#d1483a');
         for (let i = 0; i < 3; i++) this.emit('heart', leo.x + rand(-30, 30), g - 150, rand(-40, 40), rand(-110, -60), 1.1);
-        if (this.kisses >= 3) {
+        if (this.kisses >= 4) {
           this.sub = 4;
           this.modeT = 0;
           this.tickT = 0;
+          leo.x = 150;
           this.sound.fanfare();
           this.onToast('개인기 전부 성공! 왕큰 쌩쌩이 받아라');
         }
+      } else {
+        this.kisses = Math.max(0, this.kisses - 1);
+        this.sound.boing();
+        this.say('피했다! -1', p.x, p.y - 20, 24, INK);
       }
     }
   }
 
   private trickUp(dy: number) {
     const leo = this.leo;
-    if (this.sub === 0) {
-      if (dy > 60) {
-        this.sub = 1;
-        this.hold = 0;
-        leo.squash.target = 0.84;
-        leo.boop(0.6);
-        this.sound.jingle();
-        buzz(20);
-        this.say('앉았다!', leo.x, this.gy - 215, 28, '#6b8f5a');
-        this.onToast('이번엔 기다려! 화면을 꾹 누른 채 3초 버텨요');
-      }
-    } else if (this.sub === 1 && this.hold > 0.25 && this.hold < 3) {
-      this.hold = 0;
-      leo.barkPose();
+    if (this.sub !== 0 || dy <= 60) return;
+    if (!this.looking) {
+      // 딴청 피울 때 시키면 무시당한다
+      this.trickN = 0;
       this.sound.boing();
-      this.sound.munch();
-      this.say('못 참고 먹어버렸다!', W / 2, this.gy - 215, 24, INK);
+      this.say('딴청 피우는 중! 처음부터', W / 2, this.gy - 215, 22, INK);
+      return;
+    }
+    this.trickN++;
+    leo.boop(1);
+    this.sound.pop();
+    buzz(20);
+    this.say(`앉았다! ${this.trickN}/2`, leo.x, this.gy - 215, 28, '#6b8f5a');
+    // 한 번 앉히면 바로 딴청을 피워서, 막 쓸어내리는 걸로는 못 깬다
+    this.looking = false;
+    this.tickT = rand(0.8, 1.7);
+    if (this.trickN >= 2) {
+      this.sub = 1;
+      this.patience = 0.6;
+      this.modeT = 5;
+      leo.squash.target = 0.84;
+      leo.tilt.target = 0;
+      this.sound.jingle();
+      this.onToast('기다려! 화면을 연타해서 5초 동안 참게 해요');
     }
   }
 
@@ -881,22 +915,58 @@ export class Game {
     const leo = this.leo;
     const g = this.gy;
     leo.pant = this.sub !== 1;
-    leo.paw.target = 0;
-    if (this.sub === 1) {
-      if (this.ptr) {
-        this.hold += dt;
-        leo.tremble = (this.hold / 3) * 1.4;
-        if (this.hold >= 3) {
-          this.sub = 2;
-          this.sound.jingle();
-          buzz(30);
-          leo.happy(1.2);
-          this.say('잘 기다렸어!', leo.x, g - 215, 28, '#6b8f5a');
-          this.onToast('손! 레오가 발을 번쩍 들 때 앞발을 눌러요');
-        }
+    if (this.sub === 0) {
+      // 앉아: 레오가 쳐다볼 때만 통한다
+      this.tickT -= dt;
+      if (this.tickT <= 0) {
+        this.looking = !this.looking;
+        this.tickT = this.looking ? rand(0.55, 0.8) : rand(0.8, 1.7);
+        if (!this.looking) leo.dir = Math.random() < 0.5 ? 1 : -1;
+      }
+      if (!this.looking) {
+        leo.headX.target = 10;
+        leo.tilt.target = 0.2;
+        leo.eye = 'squint';
+        leo.pant = false;
+      } else {
+        leo.tilt.target = 0;
+      }
+    } else if (this.sub === 1) {
+      // 기다려: 참을성이 계속 깎이고, 갈수록 빨리 깎인다
+      this.modeT -= dt;
+      this.patience -= (0.42 + (5 - this.modeT) * 0.05) * dt;
+      leo.tremble = (1 - this.patience) * 1.6;
+      if (this.patience <= 0) {
+        this.patience = 0.6;
+        this.modeT = 5;
+        leo.barkPose();
+        this.sound.boing();
+        this.sound.munch();
+        this.say('못 참고 먹어버렸다! 다시', W / 2, g - 215, 24, INK);
+      } else if (this.modeT <= 0) {
+        this.sub = 2;
+        this.trickN = 0;
+        this.tickT = 1;
+        leo.paw.target = 0;
+        this.sound.jingle();
+        buzz(30);
+        leo.happy(1.2);
+        this.say('잘 기다렸어!', leo.x, g - 215, 28, '#6b8f5a');
+        this.onToast('손! 발을 번쩍 든 순간에만 눌러요. 3번 연속');
       }
     } else if (this.sub === 2) {
-      leo.paw.target = this.t % 1.6 < 0.85 ? 1 : 0;
+      // 손: 드는 순간이 짧고 간격이 들쭉날쭉
+      this.tickT -= dt;
+      if (this.tickT <= 0) {
+        const up = leo.paw.target < 0.5;
+        leo.paw.target = up ? 1 : 0;
+        this.tickT = up ? 0.45 : rand(0.6, 1.5);
+      }
+    } else if (this.sub === 3) {
+      // 뽀뽀: 좌우로 피해 다니고, 성공할수록 빨라진다
+      leo.paw.target = 0;
+      this.modeT += dt * (1.6 + this.kisses * 0.5);
+      leo.x = 175 + Math.sin(this.modeT) * 105;
     } else if (this.sub === 4) {
       this.modeT += dt;
       if (this.modeT > 0.7) {
@@ -922,33 +992,46 @@ export class Game {
     const leo = this.leo;
     const g = this.gy;
     this.banner(['앉아!', '기다려!', '손!', '뽀뽀!', '왕큰 쌩쌩이!'][this.sub] ?? '', 46, this.sub === 4 ? '#d1483a' : INK);
+    const label = (text: string, x: number, y: number, color: string, size = 24) => {
+      ctx.save();
+      ctx.font = `700 ${size}px Gaegu, "Comic Sans MS", cursive`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = color;
+      ctx.fillText(text, x, y);
+      ctx.restore();
+    };
     if (this.sub === 0) {
-      // 아래로 쓸어내리라는 화살표
-      const ax = leo.x + 110;
-      const ay = g - 170 + ((this.t * 60) % 40);
-      c.line([[ax, ay - 30], [ax, ay + 20]], '#8c8272', 3.4, 500, 1);
-      c.line([[ax - 12, ay + 6], [ax, ay + 22], [ax + 12, ay + 6]], '#8c8272', 3.4, 501, 1);
+      label(this.looking ? '!' : '…', leo.x + 58, g - 190, this.looking ? '#6b8f5a' : '#8c8272', 44);
+      label(`${this.trickN}/2`, leo.x + 112, g - 120, INK);
+      if (this.looking) {
+        const ax = leo.x + 112;
+        const ay = g - 90 + ((this.t * 80) % 30);
+        c.line([[ax, ay - 20], [ax, ay + 14]], '#6b8f5a', 3.4, 500, 1);
+        c.line([[ax - 10, ay + 2], [ax, ay + 16], [ax + 10, ay + 2]], '#6b8f5a', 3.4, 501, 1);
+      }
     }
     if (this.sub === 1) {
       const tx = leo.x + 95;
       const ty = g - 16;
       this.heartTreat(tx, ty, 0.9);
       ctx.save();
-      ctx.lineWidth = 6;
+      ctx.lineWidth = 7;
       ctx.lineCap = 'round';
       ctx.strokeStyle = '#e6dcc6';
       ctx.beginPath();
       ctx.arc(tx, ty, 34, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.strokeStyle = '#9dbf7a';
+      ctx.strokeStyle = this.patience < 0.3 ? '#d1483a' : '#9dbf7a';
       ctx.beginPath();
-      ctx.arc(tx, ty, 34, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, this.hold / 3));
+      ctx.arc(tx, ty, 34, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * clamp(this.patience, 0.01, 1));
       ctx.stroke();
       ctx.restore();
+      label(`${Math.max(0, this.modeT).toFixed(1)}초`, tx, ty - 48, INK);
     }
     if (this.sub === 2) {
       const up = leo.paw.target > 0.5;
       c.blob(leo.x + 72, g - 62 * LEO_SCALE, 24, 13, { fill: '#f1c9a5', edge: '#b98a63', seed: 502 });
+      label(`${this.trickN}/3`, leo.x + 112, g - 120, INK);
       if (up) {
         ctx.save();
         ctx.strokeStyle = '#9dbf7a';
@@ -960,14 +1043,7 @@ export class Game {
         ctx.restore();
       }
     }
-    if (this.sub === 3) {
-      ctx.save();
-      ctx.font = '700 24px Gaegu, "Comic Sans MS", cursive';
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#d1483a';
-      ctx.fillText(`뽀뽀 ${this.kisses}/3`, leo.x + 105, g - 120);
-      ctx.restore();
-    }
+    if (this.sub === 3) label(`뽀뽀 ${this.kisses}/4`, W / 2, Math.max(232, g - 268), '#d1483a');
     if (this.sub === 4) {
       const fall = Math.min(g - 62, g - 340 + 900 * this.modeT * this.modeT);
       const k = 3 * (1 - clamp((this.modeT - 0.7) / 2.3, 0, 0.95));
@@ -975,10 +1051,10 @@ export class Game {
     }
     this.guide(
       [
-        '손짓하듯 화면을 아래로 쓸어내려요',
-        '꾹 누른 채로 버텨요. 떼면 먹어버려요',
-        '발을 들었을 때 앞발을 눌러요',
-        '레오 주둥이를 눌러요',
+        '느낌표가 뜰 때만 아래로 쓸어내려요',
+        '연타! 게이지가 바닥나면 먹어버려요',
+        '발을 든 순간에만 눌러요. 틀리면 처음부터',
+        '움직이는 주둥이를 눌러요. 빗나가면 1개 깎여요',
         '',
       ][this.sub] ?? '',
     );
