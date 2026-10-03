@@ -71,7 +71,7 @@ export class Game {
   private barksLeft = 0;
   private barkT = 0;
   private eating = false;
-  private poopAt = 0;
+  private poopQ: number[] = [];
   private poops: number[] = [];
   private bowl: number | null = null;
   private treat: { x: number; y: number; vy: number; held: boolean; dropped: boolean } | null = null;
@@ -1580,8 +1580,8 @@ export class Game {
             this.barkT = 0;
           }
         }
-        if (this.poopAt && this.t > this.poopAt) {
-          this.poopAt = 0;
+        if (this.poopQ.length && this.t > this.poopQ[0]) {
+          this.poopQ.shift();
           this.poops.push(clamp(leo.x - leo.dir * 62, 40, W - 110));
           this.sound.pop();
           this.onToast('레오가 응가했어요. 눌러서 치워주세요');
@@ -1608,7 +1608,9 @@ export class Game {
           leo.happy(2);
           leo.jump(-300);
           this.sound.jingle();
-          this.poopAt = this.t + 30;
+          // 똥쟁이: 밥 먹고 20초 뒤 한 번, 절반 확률로 한 번 더 (끼니당 평균 1.5번)
+          this.poopQ.push(this.t + 20);
+          if (Math.random() < 0.5) this.poopQ.push(this.t + 50);
           this.onToast('싹싹 비웠어요');
           this.bump({ hunger: 45, mood: 6 });
           this.gainXp(10);
@@ -1894,6 +1896,9 @@ export class Game {
             this.sub = 1;
             this.modeT = 1.8;
             this.say('킁킁', leo.x + 50, g - 60, 24, '#6b8f5a');
+          } else if (this.dist >= 40 && !(this.ev & 32)) {
+            this.ev |= 32;
+            poop('가다가 또 응가! 눌러서 봉투에 담아주세요');
           } else if (this.dist >= 55 && !(this.ev & 2)) {
             this.ev |= 2;
             this.sub = 2;
@@ -1904,7 +1909,7 @@ export class Game {
             this.onToast('다른 강아지다! 레오를 쓰다듬어 진정시켜 주세요');
           } else if (this.dist >= 80 && !(this.ev & 4)) {
             this.ev |= 4;
-            poop('또 응가! 눌러서 봉투에 담아주세요');
+            poop('세 번째 응가! 진짜 똥쟁이. 눌러서 치워주세요');
           } else if (this.dist >= 90 && !(this.ev & 16)) {
             this.ev |= 16;
             this.sub = 4;
