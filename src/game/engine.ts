@@ -103,6 +103,9 @@ export class Game {
   onLevelUp: (level: number, game: EventGame) => void = () => {};
   private lastGame: EventGame | null = null;
   private kisses = 0;
+  private anger = 0;
+  private growling = false;
+  private rageBack = false;
   private sockN = 0;
   private sockT = 0;
   private socks: { x: number; y: number; vx: number; vy: number; t: number; c: number; tissue: boolean }[] = [];
@@ -338,17 +341,7 @@ export class Game {
     }
     if (this.mode === 'sleep') {
       // 자는데 깨우면 엄청 화내면서 물려고 한다
-      const leo = this.leo;
-      leo.squash.target = 1;
-      leo.happyT = 0;
-      this.mode = 'angry';
-      this.modeT = 2.8;
-      this.tickT = 0.35;
-      this.sound.growl();
-      buzz(120);
-      leo.boop(1.2);
-      this.say('으르르르!!', leo.x, this.gy - 215, 30, '#b3261e');
-      this.onToast('자는데 깨워서 엄청 화났어요. 물려요, 도망쳐요!');
+      this.rage('자는데 깨워서 엄청 화났어요. 물려요, 도망쳐요!', false);
       return;
     }
     if (this.mode === 'walk' && Math.hypot(p.x - this.handle.x, p.y - this.handle.y) < 50) {
@@ -1403,6 +1396,23 @@ export class Game {
     ctx.restore();
   }
 
+  /** 폭발: 화내면서 손가락 쪽으로 달려들어 문다 */
+  private rage(msg: string, backToDry: boolean) {
+    const leo = this.leo;
+    leo.squash.target = 1;
+    leo.happyT = 0;
+    leo.tilt.target = 0;
+    this.rageBack = backToDry;
+    this.mode = 'angry';
+    this.modeT = 2.8;
+    this.tickT = 0.35;
+    this.sound.growl();
+    buzz(120);
+    leo.boop(1.2);
+    this.say('으르르르!!', leo.x, this.gy - 215, 30, '#b3261e');
+    this.onToast(msg);
+  }
+
   private wake(msg: string) {
     this.leo.squash.target = 1;
     this.leo.boop(0.8);
@@ -1766,11 +1776,31 @@ export class Game {
           if (this.modeT <= 0) {
             this.sub = 3;
             this.wet = [1, 1, 1, 1, 1];
-            this.onToast('드라이기로 물방울 있는 곳을 구석구석 말려주세요');
+            this.anger = 0;
+            this.growling = false;
+            this.onToast('드라이기로 구석구석 말려요. 레오 눈치를 잘 봐야 해요');
           }
         } else {
           // 털 말리기: 부위 5곳을 전부 말려야 끝
-          leo.eye = 'open';
+          // 눈치 게임: 계속 말리면 짜증이 차고, 으르렁거릴 때 안 멈추면 폭발
+          this.anger = clamp(this.anger + (this.ptr ? dt * 0.55 : -dt * 0.7), 0, 1);
+          const growl = this.anger > 0.5;
+          leo.eye = growl ? 'angry' : 'open';
+          leo.pant = growl;
+          if (growl) {
+            leo.happyT = 0;
+            leo.tremble = 0.8;
+          }
+          if (growl && !this.growling) {
+            this.sound.growl();
+            buzz(50);
+            this.say('으르르…', leo.x, g - 215, 26, '#b3261e');
+          }
+          this.growling = growl;
+          if (this.anger >= 1) {
+            this.rage('으르렁거리는데 계속 말려서 폭발했어요!', true);
+            break;
+          }
           if (this.ptr) {
             this.tickT -= dt;
             if (this.tickT <= 0) {
@@ -1956,7 +1986,17 @@ export class Game {
           buzz(30);
           this.say(Math.random() < 0.5 ? '왁!!' : '앙!', leo.x + rand(-50, 50), g - rand(180, 225), rand(26, 34), '#b3261e');
         }
-        if (this.modeT <= 0) {
+        if (this.modeT <= 0 && this.rageBack) {
+          // 털 말리던 중이었으면 다시 말리기로 돌아간다
+          leo.targetX = null;
+          this.rageBack = false;
+          this.anger = 0;
+          this.growling = false;
+          this.mode = 'bath';
+          this.sub = 3;
+          this.onToast('겨우 진정됐어요. 눈치 보면서 다시 말려요');
+          this.bump({ mood: -8 });
+        } else if (this.modeT <= 0) {
           leo.targetX = null;
           leo.back = true;
           this.mode = 'sulk';
@@ -2287,6 +2327,28 @@ export class Game {
         }
         ctx.restore();
       });
+      // 짜증 게이지
+      const gy0 = Math.max(205, g - 295);
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineWidth = 10;
+      ctx.strokeStyle = '#e6dcc6';
+      ctx.beginPath();
+      ctx.moveTo(120, gy0);
+      ctx.lineTo(300, gy0);
+      ctx.stroke();
+      if (this.anger > 0.02) {
+        ctx.strokeStyle = this.anger > 0.5 ? '#d1483a' : '#f2c84b';
+        ctx.beginPath();
+        ctx.moveTo(120, gy0);
+        ctx.lineTo(120 + 180 * this.anger, gy0);
+        ctx.stroke();
+      }
+      ctx.font = '700 18px Gaegu, "Comic Sans MS", cursive';
+      ctx.fillStyle = INK;
+      ctx.fillText('짜증', 78, gy0 + 6);
+      ctx.restore();
+      this.guide('으르렁거리면 손을 떼요. 계속 말리면 물려요');
       if (this.ptr) {
         // 드라이기
         ctx.save();
