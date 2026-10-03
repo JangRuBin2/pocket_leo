@@ -515,7 +515,7 @@ export class Game {
       leo.harness = true;
       this.handle = { x: leo.x + 105, y: this.gy - 150, held: false };
       this.sound.jingle();
-      this.onToast('하네스 채우고 산책 출발');
+      this.onToast('목줄 채우고 산책 출발');
       return;
     }
     if (kind === 'bath') {
@@ -1185,6 +1185,27 @@ export class Game {
       ctx.lineWidth = 2;
       ctx.stroke();
     }
+    if (this.mode === 'walk') {
+      // 줄과 손잡이는 레오 뒤에 그린다
+      const leo = this.leo;
+      const h = this.handle;
+      const ax = leo.x + 6;
+      const ay = g - 92 * LEO_SCALE + leo.lift.x + leo.hopY;
+      ctx.save();
+      ctx.strokeStyle = '#d1483a';
+      ctx.lineCap = 'round';
+      ctx.lineWidth = 3.2;
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      const slack = Math.max(6, 46 - Math.hypot(h.x - ax, h.y - ay) * 0.22);
+      ctx.quadraticCurveTo((ax + h.x) / 2, Math.max(ay, h.y) + slack, h.x, h.y + 14);
+      ctx.stroke();
+      ctx.lineWidth = 5.5;
+      ctx.beginPath();
+      ctx.ellipse(h.x, h.y, 12 + (c.boil % 2) * 0.6, 16, 0.2, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
     this.leo.draw(c, g);
     if (this.bowl !== null) {
       c.blob(this.bowl, g - 16, 21, 6, { fill: '#9a6a3c', seed: 210 });
@@ -1457,23 +1478,6 @@ export class Game {
         c.blob(x + 1, g - 23, 5.5, 4.5, { fill: '#8a5a33', edge: '#5e3b1e', seed: 202 });
       }
       {
-        const h = this.handle;
-        const ax = leo.x + 20 * LEO_SCALE;
-        const ay = g - 96 * LEO_SCALE + leo.lift.x + leo.hopY;
-        ctx.save();
-        ctx.strokeStyle = '#d1483a';
-        ctx.lineCap = 'round';
-        ctx.lineWidth = 3.2;
-        ctx.beginPath();
-        ctx.moveTo(ax, ay);
-        const slack = Math.max(6, 46 - Math.hypot(h.x - ax, h.y - ay) * 0.22);
-        ctx.quadraticCurveTo((ax + h.x) / 2, Math.max(ay, h.y) + slack, h.x, h.y + 14);
-        ctx.stroke();
-        ctx.lineWidth = 5.5;
-        ctx.beginPath();
-        ctx.ellipse(h.x, h.y, 12 + (c.boil % 2) * 0.6, 16, 0.2, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
         if (this.sub === 5) {
           c.blob(leo.x - 46, g - 34 + leo.lift.x, 17, 13, { fill: '#f1c9a5', edge: '#b98a63', seed: 290 });
           c.blob(leo.x + 46, g - 34 + leo.lift.x, 17, 13, { fill: '#f1c9a5', edge: '#b98a63', seed: 291 });

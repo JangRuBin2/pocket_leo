@@ -176,10 +176,9 @@ export class Leo {
     if (back) tail(0);
     else c.blob(0, -74 + lag, 39, 33, { fill: WHITE, seed: 7, fur: 0.42 });
     if (this.harness) {
-      // 빨간 천 하네스
-      c.blob(0, -74, 38, 6.5, { fill: '#d1483a', edge: '#9c2f25', seed: 60, hatch: 0.3 });
-      if (!back) c.blob(0, -90, 7, 15, { fill: '#d1483a', edge: '#9c2f25', seed: 61, hatch: 0.3 });
-      c.blob(back ? 0 : 20, -96, 5, 5, { fill: '#b9b4ac', edge: '#4a4640', seed: 62 });
+      // 빨간 천 목줄: 머리보다 먼저 그려서 얼굴 뒤로 간다
+      c.blob(0, -89, 31, 7, { fill: '#d1483a', edge: '#9c2f25', seed: 60, hatch: 0.3 });
+      if (!back) c.blob(0, -81, 4.5, 4.5, { fill: '#e8c15a', edge: '#8a6a22', seed: 61 });
     }
 
     ctx.save();
