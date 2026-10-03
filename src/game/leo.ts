@@ -50,6 +50,7 @@ export class Leo {
   tremble = 0;
   harness = false;
   hat = false;
+  paw = new Spring(0, 220, 14);
   lift = new Spring(0, 110, 12);
   private prevY = 0;
 
@@ -120,7 +121,7 @@ export class Leo {
     this.prevY = y;
     this.fur.target = clamp(-dy * 0.03, -9, 9);
 
-    for (const s of [this.squash, this.headX, this.headY, this.tilt, this.fur, this.mouth, this.tailAmp, this.lift]) s.step(dt);
+    for (const s of [this.squash, this.headX, this.headY, this.tilt, this.fur, this.mouth, this.tailAmp, this.lift, this.paw]) s.step(dt);
     this.squash.x = clamp(this.squash.x, 0.6, 1.4);
 
     this.tailPhase += dt * this.tailSpeed;
@@ -173,7 +174,7 @@ export class Leo {
     c.blob(35 + kickX, -12 - Math.abs(kickX) * 0.4, 13, 14, { fill: CREAM, edge: TAN, seed: 3, fur: 0.15 });
     c.blob(0, -58, 48, 46, { fill: CREAM, edge: TAN, seed: 4, fur: 0.22 });
     c.blob(-19, -15 - Math.max(0, lp), 11, 17, { fill: APRICOT, edge: TAN, seed: 5, fur: 0.12 });
-    c.blob(19, -15 - Math.max(0, -lp), 11, 17, { fill: APRICOT, edge: TAN, seed: 6, fur: 0.12 });
+    c.blob(19 + this.paw.x * 14, -15 - Math.max(0, -lp) - this.paw.x * 28, 11, 17, { fill: APRICOT, edge: TAN, seed: 6, fur: 0.12, rot: -this.paw.x * 1.0 });
     if (back) tail(0);
     else c.blob(0, -74 + lag, 39, 33, { fill: WHITE, seed: 7, fur: 0.42 });
     if (this.harness) {

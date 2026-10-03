@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Game, type Action, type Stats } from './game/engine';
+import { Game, type Action, type EventGame, type Stats } from './game/engine';
+
+const EVENTS: Record<EventGame, { name: string; go: string }> = {
+  cake: { name: '레오 생일 케이크 만들기', go: '케이크 만들러 가기' },
+  trick: { name: '개인기 연습하기', go: '개인기 연습하러 가기' },
+  sock: { name: '양말 벗기기 + 양말 물기', go: '양말 사냥하러 가기' },
+};
 
 const METERS: { key: keyof Stats; label: string; color: string }[] = [
   { key: 'hunger', label: '배부름', color: 'var(--orange)' },
@@ -99,7 +105,7 @@ export default function App() {
   const [started, setStarted] = useState(false);
   const [muted, setMuted] = useState(false);
   const [prog, setProg] = useState({ level: 1, xp: 0, need: 100 });
-  const [event, setEvent] = useState(0);
+  const [event, setEvent] = useState<{ level: number; game: EventGame } | null>(null);
 
   useEffect(() => {
     const g = new Game(canvas.current!);
@@ -110,7 +116,7 @@ export default function App() {
       timer.current = window.setTimeout(() => setToast(''), 2800);
     };
     g.onProgress = (level, xp, need) => setProg({ level, xp, need });
-    g.onLevelUp = (level) => setEvent(level);
+    g.onLevelUp = (level, game) => setEvent({ level, game });
     game.current = g;
     setStats({ ...g.stats });
     setProg({ level: g.level, xp: g.xp, need: g.need() });
@@ -181,26 +187,27 @@ export default function App() {
         </div>
       </footer>
 
-      {event > 0 && (
+      {event && (
         <div className="intro event">
           <p className="event-eyebrow">레벨 업!</p>
-          <h1>Lv.{event}</h1>
+          <h1>Lv.{event.level}</h1>
           <p>
             이벤트 미니게임이 열렸어요
             <br />
-            <b>레오 생일 케이크 만들기</b>
+            <b>{EVENTS[event.game].name}</b>
           </p>
           <button
             id="event-start"
             className="start"
             onClick={() => {
-              setEvent(0);
-              game.current?.startCake();
+              const g = event.game;
+              setEvent(null);
+              game.current?.startEvent(g);
             }}
           >
-            케이크 만들러 가기
+            {EVENTS[event.game].go}
           </button>
-          <button id="event-later" className="later" onClick={() => setEvent(0)}>
+          <button id="event-later" className="later" onClick={() => setEvent(null)}>
             이번엔 건너뛰기
           </button>
         </div>

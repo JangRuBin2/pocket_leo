@@ -10,7 +10,10 @@ export interface Stats {
   energy: number;
 }
 export type Action = 'feed' | 'treat' | 'ball' | 'mom' | 'walk' | 'bath' | 'vet' | 'sleep';
-type Mode = 'idle' | 'feed' | 'treat' | 'zoom' | 'ball' | 'mom' | 'sulk' | 'walk' | 'bath' | 'vet' | 'sleep' | 'angry' | 'cake';
+type Mode = 'idle' | 'feed' | 'treat' | 'zoom' | 'ball' | 'mom' | 'sulk' | 'walk' | 'bath' | 'vet' | 'sleep' | 'angry' | 'cake' | 'trick' | 'sock';
+export type EventGame = 'cake' | 'trick' | 'sock';
+const GAMES: EventGame[] = ['cake', 'trick', 'sock'];
+const SOCK_COLORS = ['#7fa8c9', '#ee8a8a', '#9dbf7a', '#f2c84b', '#b79ad6'];
 
 interface Part {
   kind: 'heart' | 'dust' | 'line' | 'crumb' | 'drop' | 'bubble';
@@ -97,7 +100,13 @@ export class Game {
   level = 1;
   xp = 0;
   onProgress: (level: number, xp: number, need: number) => void = () => {};
-  onLevelUp: (level: number) => void = () => {};
+  onLevelUp: (level: number, game: EventGame) => void = () => {};
+  private lastGame: EventGame | null = null;
+  private kisses = 0;
+  private tug = 0;
+  private sockN = 0;
+  private sockT = 0;
+  private socks: { x: number; y: number; t: number; c: number }[] = [];
   private pendingEvent = false;
   private cake = {
     layers: [] as number[],
@@ -156,7 +165,8 @@ export class Game {
     try {
       const raw = localStorage.getItem(SAVE_KEY);
       if (!raw) return;
-      const d = JSON.parse(raw) as { stats: Stats; ts: number; poops: number; level?: number; xp?: number };
+      const d = JSON.parse(raw) as { stats: Stats; ts: number; poops: number; level?: number; xp?: number; lastGame?: EventGame };
+      this.lastGame = d.lastGame ?? null;
       this.level = d.level ?? 1;
       this.xp = d.xp ?? 0;
       const sec = clamp((Date.now() - d.ts) / 1000, 0, 3600 * 48);
@@ -170,7 +180,7 @@ export class Game {
 
   private save() {
     try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify({ stats: this.stats, ts: Date.now(), poops: this.poops.length, level: this.level, xp: this.xp }));
+      localStorage.setItem(SAVE_KEY, JSON.stringify({ stats: this.stats, ts: Date.now(), poops: this.poops.length, level: this.level, xp: this.xp, lastGame: this.lastGame }));
     } catch {
       /* 무시 */
     }
@@ -318,6 +328,14 @@ export class Game {
       this.cakeDown(p);
       return;
     }
+    if (this.mode === 'trick') {
+      this.trickDown(p);
+      return;
+    }
+    if (this.mode === 'sock') {
+      this.sockDown(p);
+      return;
+    }
     if (this.mode === 'sleep') {
       // 자는데 깨우면 엄청 화내면서 물려고 한다
       const leo = this.leo;
@@ -389,6 +407,11 @@ export class Game {
     this.ptr.x = p.x;
     this.ptr.y = p.y;
 
+    if (this.mode === 'sock') {
+      if (this.sub === 0 && dx < 0) this.tug += -dx / 520;
+      return;
+    }
+    if (this.mode === 'trick') return;
     if (this.mode === 'cake') {
       const ck = this.cake;
       const g = this.gy;
@@ -456,6 +479,11 @@ export class Game {
     const ptr = this.ptr;
     this.ptr = null;
     if (!ptr) return;
+    if (this.mode === 'sock') return;
+    if (this.mode === 'trick') {
+      this.trickUp(ptr.y - ptr.sy);
+      return;
+    }
     if (this.mode === 'cake') {
       const ck = this.cake;
       ck.drawing = false;
@@ -736,8 +764,386 @@ export class Game {
     ctx.closePath();
   }
 
+  startEvent(game: EventGame) {
+    if (this.mode !== 'idle') return;
+    if (game === 'cake') this.startCake();
+    else if (game === 'trick') this.startTrick();
+    else this.startSock();
+  }
+
+  private guide(text: string) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.font = '400 16px Gaegu, "Comic Sans MS", cursive';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#8c8272';
+    ctx.fillText(text, W / 2, this.gy + 56);
+    ctx.restore();
+  }
+
+  private banner(text: string, size = 44, color = INK) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.font = `700 ${size}px Gaegu, "Comic Sans MS", cursive`;
+    ctx.textAlign = 'center';
+    ctx.translate(W / 2, Math.max(200, this.gy - 300));
+    ctx.rotate(-0.04);
+    ctx.fillStyle = color;
+    ctx.fillText(text, 0, 0);
+    ctx.restore();
+  }
+
+  private heartTreat(x: number, y: number, k: number) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(k, k);
+    ctx.beginPath();
+    ctx.moveTo(0, 15);
+    ctx.bezierCurveTo(-27, -4, -15, -24, 0, -9);
+    ctx.bezierCurveTo(15, -24, 27, -4, 0, 15);
+    ctx.fillStyle = '#a8703c';
+    ctx.fill();
+    ctx.strokeStyle = '#6b3f1c';
+    ctx.lineWidth = 2 / Math.max(k, 0.3);
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---------- 이벤트 미니게임: 개인기 연습 ----------
+  private startTrick() {
+    const leo = this.leo;
+    this.mode = 'trick';
+    this.sub = 0;
+    this.hold = 0;
+    this.kisses = 0;
+    this.barksLeft = 0;
+    leo.x = 150;
+    leo.dir = 1;
+    leo.targetX = null;
+    this.sound.jingle();
+    this.onToast('개인기 연습 시간! 앉아부터 뽀뽀까지 성공해 봐요');
+  }
+
+  private trickDown(p: P) {
+    const leo = this.leo;
+    const g = this.gy;
+    if (this.sub === 2) {
+      if (Math.hypot(p.x - (leo.x + 36), p.y - (g - 52 * LEO_SCALE)) < 56) {
+        if (leo.paw.target > 0.5) {
+          this.sub = 3;
+          this.sound.jingle();
+          buzz(30);
+          leo.happy(1.2);
+          this.say('손!', leo.x + 60, g - 120, 34, '#6b8f5a');
+          this.onToast('마지막 개인기! 레오 주둥이를 눌러 뽀뽀 3번');
+        } else {
+          this.say('아직!', leo.x + 60, g - 110, 22, INK);
+        }
+      }
+    } else if (this.sub === 3) {
+      if (Math.hypot(p.x - leo.x, p.y - (g - 116 * LEO_SCALE)) < 52) {
+        this.kisses++;
+        this.sound.bubble();
+        this.sound.note(6 + this.kisses);
+        buzz(25);
+        leo.happy(1.2);
+        leo.boop(0.5);
+        this.say('쪽!', leo.x + rand(-40, 40), g - 200, 32, '#d1483a');
+        for (let i = 0; i < 3; i++) this.emit('heart', leo.x + rand(-30, 30), g - 150, rand(-40, 40), rand(-110, -60), 1.1);
+        if (this.kisses >= 3) {
+          this.sub = 4;
+          this.modeT = 0;
+          this.tickT = 0;
+          this.sound.fanfare();
+          this.onToast('개인기 전부 성공! 왕큰 쌩쌩이 받아라');
+        }
+      }
+    }
+  }
+
+  private trickUp(dy: number) {
+    const leo = this.leo;
+    if (this.sub === 0) {
+      if (dy > 60) {
+        this.sub = 1;
+        this.hold = 0;
+        leo.squash.target = 0.84;
+        leo.boop(0.6);
+        this.sound.jingle();
+        buzz(20);
+        this.say('앉았다!', leo.x, this.gy - 215, 28, '#6b8f5a');
+        this.onToast('이번엔 기다려! 화면을 꾹 누른 채 3초 버텨요');
+      }
+    } else if (this.sub === 1 && this.hold > 0.25 && this.hold < 3) {
+      this.hold = 0;
+      leo.barkPose();
+      this.sound.boing();
+      this.sound.munch();
+      this.say('못 참고 먹어버렸다!', W / 2, this.gy - 215, 24, INK);
+    }
+  }
+
+  private updateTrick(dt: number) {
+    const leo = this.leo;
+    const g = this.gy;
+    leo.pant = this.sub !== 1;
+    leo.paw.target = 0;
+    if (this.sub === 1) {
+      if (this.ptr) {
+        this.hold += dt;
+        leo.tremble = (this.hold / 3) * 1.4;
+        if (this.hold >= 3) {
+          this.sub = 2;
+          this.sound.jingle();
+          buzz(30);
+          leo.happy(1.2);
+          this.say('잘 기다렸어!', leo.x, g - 215, 28, '#6b8f5a');
+          this.onToast('손! 레오가 발을 번쩍 들 때 앞발을 눌러요');
+        }
+      }
+    } else if (this.sub === 2) {
+      leo.paw.target = this.t % 1.6 < 0.85 ? 1 : 0;
+    } else if (this.sub === 4) {
+      this.modeT += dt;
+      if (this.modeT > 0.7) {
+        this.tickT -= dt;
+        leo.headX.target = 9;
+        leo.headY.target = 8 + Math.sin(this.t * 16) * 5;
+        if (this.tickT <= 0) {
+          this.tickT = 0.22;
+          this.sound.munch();
+          buzz(8);
+          for (let i = 0; i < 2; i++) this.emit('crumb', leo.x + 80 + rand(-20, 20), g - 50, rand(-90, 90), rand(-140, -40), 0.6);
+        }
+      }
+      if (this.modeT > 3.1) {
+        this.endScene('개인기 완벽! 왕큰 쌩쌩이까지 다 먹었어요', { mood: 35, hunger: 20, energy: 15 }, 0);
+      }
+    }
+  }
+
+  private drawTrick() {
+    const ctx = this.ctx;
+    const c = this.crayon;
+    const leo = this.leo;
+    const g = this.gy;
+    this.banner(['앉아!', '기다려!', '손!', '뽀뽀!', '왕큰 쌩쌩이!'][this.sub] ?? '', 46, this.sub === 4 ? '#d1483a' : INK);
+    if (this.sub === 0) {
+      // 아래로 쓸어내리라는 화살표
+      const ax = leo.x + 110;
+      const ay = g - 170 + ((this.t * 60) % 40);
+      c.line([[ax, ay - 30], [ax, ay + 20]], '#8c8272', 3.4, 500, 1);
+      c.line([[ax - 12, ay + 6], [ax, ay + 22], [ax + 12, ay + 6]], '#8c8272', 3.4, 501, 1);
+    }
+    if (this.sub === 1) {
+      const tx = leo.x + 95;
+      const ty = g - 16;
+      this.heartTreat(tx, ty, 0.9);
+      ctx.save();
+      ctx.lineWidth = 6;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#e6dcc6';
+      ctx.beginPath();
+      ctx.arc(tx, ty, 34, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = '#9dbf7a';
+      ctx.beginPath();
+      ctx.arc(tx, ty, 34, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, this.hold / 3));
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (this.sub === 2) {
+      const up = leo.paw.target > 0.5;
+      c.blob(leo.x + 72, g - 62 * LEO_SCALE, 24, 13, { fill: '#f1c9a5', edge: '#b98a63', seed: 502 });
+      if (up) {
+        ctx.save();
+        ctx.strokeStyle = '#9dbf7a';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([6, 6]);
+        ctx.beginPath();
+        ctx.arc(leo.x + 36, g - 52 * LEO_SCALE, 30, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+    if (this.sub === 3) {
+      ctx.save();
+      ctx.font = '700 24px Gaegu, "Comic Sans MS", cursive';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#d1483a';
+      ctx.fillText(`뽀뽀 ${this.kisses}/3`, leo.x + 105, g - 120);
+      ctx.restore();
+    }
+    if (this.sub === 4) {
+      const fall = Math.min(g - 62, g - 340 + 900 * this.modeT * this.modeT);
+      const k = 3 * (1 - clamp((this.modeT - 0.7) / 2.3, 0, 0.95));
+      this.heartTreat(leo.x + 100, fall + (3 - k) * 14, k);
+    }
+    this.guide(
+      [
+        '손짓하듯 화면을 아래로 쓸어내려요',
+        '꾹 누른 채로 버텨요. 떼면 먹어버려요',
+        '발을 들었을 때 앞발을 눌러요',
+        '레오 주둥이를 눌러요',
+        '',
+      ][this.sub] ?? '',
+    );
+  }
+
+  // ---------- 이벤트 미니게임: 양말 벗기기 + 양말 물기 ----------
+  private startSock() {
+    const leo = this.leo;
+    this.mode = 'sock';
+    this.sub = 0;
+    this.tug = 0;
+    this.sockN = 0;
+    this.socks = [];
+    this.barksLeft = 0;
+    leo.x = 150;
+    leo.dir = 1;
+    leo.targetX = null;
+    this.sound.jingle();
+    this.onToast('양말 사냥 시간! 발에서 양말을 벗겨요');
+  }
+
+  private sockDown(p: P) {
+    if (this.sub !== 1) return;
+    const leo = this.leo;
+    const i = this.socks.findIndex((s) => Math.hypot(p.x - s.x, p.y - s.y) < 40);
+    if (i < 0) return;
+    const s = this.socks[i];
+    this.socks.splice(i, 1);
+    this.sockN++;
+    leo.goTo(clamp(s.x, 45, W - 45), undefined, 620);
+    leo.jump(-260);
+    leo.barkPose();
+    this.sound.munch();
+    this.sound.note(this.sockN % 14);
+    buzz(15);
+    this.say('앙!', s.x, s.y - 18, 28, '#d1483a');
+    for (let k = 0; k < 3; k++) this.emit('dust', s.x, s.y, rand(-90, 90), rand(-120, -20), 0.5);
+  }
+
+  private updateSock(dt: number) {
+    const leo = this.leo;
+    const g = this.gy;
+    if (this.sub === 0) {
+      this.tug = Math.max(0, this.tug - dt * 0.12);
+      leo.x = 150 - this.tug * 70;
+      leo.pant = false;
+      leo.mouth.target = 0.6;
+      leo.tremble = this.ptr ? 1 : 0;
+      if (this.tug >= 1) {
+        this.sub = 1;
+        this.modeT = 12;
+        this.sockT = 0;
+        this.sound.pop();
+        this.sound.fanfare();
+        buzz(60);
+        leo.jump(-380);
+        leo.happy(2);
+        this.say('뽁!', leo.x + 60, g - 150, 36, '#d1483a');
+        this.onToast('벗겼다! 양말이 나오면 눌러서 마구 물어요');
+      }
+    } else {
+      this.modeT -= dt;
+      this.sockT -= dt;
+      leo.pant = true;
+      if (this.sockT <= 0) {
+        this.sockT = 0.5;
+        this.socks.push({ x: rand(40, W - 40), y: g - rand(20, 250), t: 0, c: Math.floor(Math.random() * SOCK_COLORS.length) });
+      }
+      for (const s of this.socks) s.t += dt;
+      this.socks = this.socks.filter((s) => s.t < 1.7);
+      if (this.modeT <= 0) {
+        const n = this.sockN;
+        const stars = n >= 14 ? 3 : n >= 9 ? 2 : 1;
+        this.socks = [];
+        this.endScene(`양말 ${n}개 물었어요! ${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}`, { mood: 35, energy: -10 }, 0);
+      }
+    }
+  }
+
+  private sockItem(x: number, y: number, rot: number, color: string, seed: number) {
+    const ctx = this.ctx;
+    const c = this.crayon;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+    c.blob(0, -9, 9.5, 16, { fill: color, edge: INK, seed });
+    c.blob(8, 8, 14, 8.5, { fill: color, edge: INK, seed: seed + 1 });
+    c.line([[-9, -18], [9, -18]], '#fbf3de', 3.4, seed + 2, 0.6);
+    c.line([[-9, -12], [9, -12]], '#fbf3de', 2.2, seed + 3, 0.6);
+    ctx.restore();
+  }
+
+  private drawSockGame() {
+    const ctx = this.ctx;
+    const c = this.crayon;
+    const leo = this.leo;
+    const g = this.gy;
+    if (this.sub === 0) {
+      // 다리와 발
+      c.rect(292, g - 190, 40, 172, '#5b6f8f', 520, '#8fa3c2');
+      c.blob(290, g - 14, 40, 15, { fill: '#f1c9a5', edge: '#b98a63', seed: 521 });
+      // 늘어나는 양말: 발끝에서 레오 입까지
+      const mx = leo.x + 18;
+      const my = g - 106 * LEO_SCALE;
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#ee8a8a';
+      ctx.lineWidth = 30;
+      ctx.beginPath();
+      ctx.moveTo(300, g - 16);
+      ctx.lineTo(262, g - 16);
+      ctx.stroke();
+      ctx.lineWidth = Math.max(9, 22 - this.tug * 12);
+      ctx.beginPath();
+      ctx.moveTo(262, g - 16);
+      ctx.quadraticCurveTo((262 + mx) / 2, g - 30 - this.tug * 20, mx, my);
+      ctx.stroke();
+      ctx.strokeStyle = '#fbf3de';
+      ctx.lineWidth = 4;
+      ctx.setLineDash([3, 14]);
+      ctx.beginPath();
+      ctx.moveTo(300, g - 16);
+      ctx.lineTo(262, g - 16);
+      ctx.quadraticCurveTo((262 + mx) / 2, g - 30 - this.tug * 20, mx, my);
+      ctx.stroke();
+      ctx.restore();
+      // 당김 게이지
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineWidth = 10;
+      ctx.strokeStyle = '#e6dcc6';
+      ctx.beginPath();
+      ctx.moveTo(95, Math.max(210, g - 290));
+      ctx.lineTo(295, Math.max(210, g - 290));
+      ctx.stroke();
+      ctx.strokeStyle = '#ee8a8a';
+      ctx.beginPath();
+      ctx.moveTo(95, Math.max(210, g - 290));
+      ctx.lineTo(95 + 200 * Math.min(1, this.tug), Math.max(210, g - 290));
+      ctx.stroke();
+      ctx.restore();
+      this.guide('화면을 왼쪽으로 쭉쭉 쓸어서 양말을 당겨요');
+    } else {
+      for (const s of this.socks) {
+        ctx.save();
+        ctx.globalAlpha = s.t > 1.3 ? (1.7 - s.t) / 0.4 : Math.min(1, s.t * 8);
+        this.sockItem(s.x, s.y + Math.sin(this.t * 6 + s.x) * 4, Math.sin(this.t * 5 + s.x) * 0.3, SOCK_COLORS[s.c], 530 + s.c * 5);
+        ctx.restore();
+      }
+      this.banner(`${Math.max(0, Math.ceil(this.modeT))}초 · 양말 ${this.sockN}개`, 30);
+      this.guide('양말을 눌러요. 레오가 달려가서 물어요');
+    }
+    void c;
+  }
+
   // ---------- 이벤트 미니게임: 레오 생일 케이크 ----------
-  startCake() {
+  private startCake() {
     if (this.mode !== 'idle') return;
     const leo = this.leo;
     this.mode = 'cake';
@@ -1014,6 +1420,7 @@ export class Game {
     leo.treadmill = false;
     leo.tremble = 0;
     leo.harness = false;
+    leo.paw.target = 0;
     leo.lift.target = 0;
     leo.squash.target = 1;
     this.handle.held = false;
@@ -1112,6 +1519,7 @@ export class Game {
     // 시선
     let look: P | null = null;
     if (this.mode === 'cake') look = { x: this.cake.mx, y: this.gy - 130 };
+    else if (this.mode === 'trick' && (this.sub === 1 || this.sub === 4)) look = { x: this.leo.x + 95, y: this.gy - 40 };
     else if (this.treat) look = this.treat;
     else if (this.ball) look = this.ball;
     else if (this.ptr) look = this.ptr;
@@ -1128,11 +1536,24 @@ export class Game {
         this.updateCake(dt);
         break;
       }
+      case 'trick': {
+        this.updateTrick(dt);
+        break;
+      }
+      case 'sock': {
+        this.updateSock(dt);
+        break;
+      }
       case 'idle': {
         if (this.pendingEvent && leo.jumpY === 0) {
           this.pendingEvent = false;
           this.sound.fanfare();
-          this.onLevelUp(this.level);
+          // 랜덤으로 뽑되 직전에 나온 미니게임은 제외
+          const pool = GAMES.filter((k) => k !== this.lastGame);
+          const pick = pool[Math.floor(Math.random() * pool.length)];
+          this.lastGame = pick;
+          this.save();
+          this.onLevelUp(this.level, pick);
         }
         if (this.barksLeft > 0) {
           this.barkT -= dt;
@@ -1591,7 +2012,7 @@ export class Game {
       ctx.restore();
     }
 
-    for (const x of this.mode === 'walk' || this.mode === 'vet' || this.mode === 'cake' ? [] : this.poops) {
+    for (const x of ['walk', 'vet', 'cake', 'trick', 'sock'].includes(this.mode) ? [] : this.poops) {
       c.blob(x, g - 6, 15, 7, { fill: '#8a5a33', edge: '#5e3b1e', seed: 200 });
       c.blob(x, g - 15, 10.5, 6, { fill: '#8a5a33', edge: '#5e3b1e', seed: 201 });
       c.blob(x + 1, g - 23, 5.5, 4.5, { fill: '#8a5a33', edge: '#5e3b1e', seed: 202 });
@@ -1635,6 +2056,8 @@ export class Game {
 
     this.drawSceneProps();
     if (this.mode === 'cake') this.drawCake();
+    if (this.mode === 'trick') this.drawTrick();
+    if (this.mode === 'sock') this.drawSockGame();
 
     const tr = this.treat;
     if (tr) {
