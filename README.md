@@ -2,6 +2,7 @@
 
 주머니 속 레오(포메라니안 + 스피츠 믹스) 키우기. 모바일 전용 육성 게임.
 
+- 플레이: https://jangrubin2.github.io/pocket_leo/
 - 기획안: [docs/PLAN.md](docs/PLAN.md)
 - 스택: React + TypeScript + Vite, Canvas 2D 크레용 렌더러, Web Audio 합성 사운드
 
@@ -15,3 +16,7 @@ npm run build:single # dist-single/pocket-leo.html (단일 파일)
 ## 프로토타입에 들어간 것
 
 쓰다듬기(가슴 명당 찾기), 찌르면 삐짐, 밥 주기, 쌩쌩이 간식과 폭주, 공놀이, 응가 치우기, 엄마 왔다(빙글빙글 + 발라당), 산책, 목욕, 병원, 재우기, 자동 짖음, 수치 4종과 실시간 감소·저장, 생성형 BGM과 효과음.
+
+## 배포
+
+`main`에 푸시하면 GitHub Actions가 빌드해서 `gh-pages` 브랜치로 올리고, GitHub Pages가 그 브랜치를 서빙한다.
