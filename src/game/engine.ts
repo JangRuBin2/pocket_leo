@@ -103,6 +103,8 @@ export class Game {
   onProgress: (level: number, xp: number, need: number) => void = () => {};
   onLevelUp: (level: number, game: EventGame) => void = () => {};
   private lastGame: EventGame | null = null;
+  /** 한 번이라도 플레이해서 다시하기가 열린 미니게임 */
+  unlocked: EventGame[] = [];
   private kisses = 0;
   private trickN = 0;
   private looking = false;
@@ -171,8 +173,9 @@ export class Game {
     try {
       const raw = localStorage.getItem(SAVE_KEY);
       if (!raw) return;
-      const d = JSON.parse(raw) as { stats: Stats; ts: number; poops: number; level?: number; xp?: number; lastGame?: EventGame };
+      const d = JSON.parse(raw) as { stats: Stats; ts: number; poops: number; level?: number; xp?: number; lastGame?: EventGame; unlocked?: EventGame[] };
       this.lastGame = d.lastGame ?? null;
+      this.unlocked = (d.unlocked ?? []).filter((k) => GAMES.includes(k));
       this.level = d.level ?? 1;
       this.xp = d.xp ?? 0;
       const sec = clamp((Date.now() - d.ts) / 1000, 0, 3600 * 48);
@@ -187,7 +190,7 @@ export class Game {
 
   private save() {
     try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify({ stats: this.stats, ts: Date.now(), poops: this.poops.length, level: this.level, xp: this.xp, lastGame: this.lastGame }));
+      localStorage.setItem(SAVE_KEY, JSON.stringify({ stats: this.stats, ts: Date.now(), poops: this.poops.length, level: this.level, xp: this.xp, lastGame: this.lastGame, unlocked: this.unlocked }));
     } catch {
       /* 무시 */
     }
@@ -759,11 +762,22 @@ export class Game {
     ctx.closePath();
   }
 
-  startEvent(game: EventGame) {
-    if (this.mode !== 'idle') return;
+  /** 미니게임 시작. replay면 이미 열린 게임만 가능 */
+  startEvent(game: EventGame, replay = false) {
+    this.sound.start();
+    if (this.mode !== 'idle') {
+      this.onToast('레오가 지금 바빠요');
+      return false;
+    }
+    if (replay && !this.unlocked.includes(game)) return false;
+    if (!this.unlocked.includes(game)) {
+      this.unlocked.push(game);
+      this.save();
+    }
     if (game === 'cake') this.startCake();
     else if (game === 'trick') this.startTrick();
     else this.startSock();
+    return true;
   }
 
   private guide(text: string) {
@@ -1633,7 +1647,11 @@ export class Game {
           this.pendingEvent = false;
           this.sound.fanfare();
           // 랜덤으로 뽑되 직전에 나온 미니게임은 제외
-          const pool = GAMES.filter((k) => k !== this.lastGame);
+          // 아직 안 열린 게임이 있으면 그중에서, 다 열렸으면 전체에서 뽑는다
+          const locked = GAMES.filter((k) => !this.unlocked.includes(k));
+          const base = locked.length ? locked : GAMES;
+          const noRepeat = base.filter((k) => k !== this.lastGame);
+          const pool = noRepeat.length ? noRepeat : base;
           const pick = pool[Math.floor(Math.random() * pool.length)];
           this.lastGame = pick;
           this.save();

@@ -106,6 +106,8 @@ export default function App() {
   const [muted, setMuted] = useState(false);
   const [prog, setProg] = useState({ level: 1, xp: 0, need: 150 });
   const [event, setEvent] = useState<{ level: number; game: EventGame } | null>(null);
+  const [menu, setMenu] = useState(false);
+  const [unlocked, setUnlocked] = useState<EventGame[]>([]);
 
   useEffect(() => {
     const g = new Game(canvas.current!);
@@ -120,6 +122,7 @@ export default function App() {
     game.current = g;
     setStats({ ...g.stats });
     setProg({ level: g.level, xp: g.xp, need: g.need() });
+    setUnlocked([...g.unlocked]);
     return () => {
       clearTimeout(timer.current);
       g.destroy();
@@ -165,9 +168,21 @@ export default function App() {
             </span>
           </div>
         </div>
-        <button id="mute" className="mute" onClick={toggleMute} aria-pressed={muted}>
-          {muted ? '소리 꺼짐' : '소리 켜짐'}
-        </button>
+        <div className="side">
+          <button id="mute" className="mute" onClick={toggleMute} aria-pressed={muted}>
+            {muted ? '소리 꺼짐' : '소리 켜짐'}
+          </button>
+          <button
+            id="open-games"
+            className="mute"
+            onClick={() => {
+              setUnlocked([...(game.current?.unlocked ?? [])]);
+              setMenu(true);
+            }}
+          >
+            미니게임
+          </button>
+        </div>
       </header>
 
       <div className={'toast' + (toast ? ' show' : '')} role="status">
@@ -203,12 +218,46 @@ export default function App() {
               const g = event.game;
               setEvent(null);
               game.current?.startEvent(g);
+              setUnlocked([...(game.current?.unlocked ?? [])]);
             }}
           >
             {EVENTS[event.game].go}
           </button>
           <button id="event-later" className="later" onClick={() => setEvent(null)}>
             이번엔 건너뛰기
+          </button>
+        </div>
+      )}
+
+      {menu && (
+        <div className="intro event games">
+          <h2>미니게임</h2>
+          <ul>
+            {(Object.keys(EVENTS) as EventGame[]).map((k) => {
+              const open = unlocked.includes(k);
+              return (
+                <li key={k} className={open ? '' : 'locked'}>
+                  <span className="game-name">{open ? EVENTS[k].name : '???'}</span>
+                  {open ? (
+                    <button
+                      id={`replay-${k}`}
+                      className="mute"
+                      onClick={() => {
+                        setMenu(false);
+                        game.current?.startEvent(k, true);
+                      }}
+                    >
+                      다시하기
+                    </button>
+                  ) : (
+                    <span className="game-lock">레벨업하면 열려요</span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          <button id="close-games" className="later" onClick={() => setMenu(false)}>
+            닫기
           </button>
         </div>
       )}
