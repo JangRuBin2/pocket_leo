@@ -144,6 +144,7 @@ export class Sound {
     const c = this.ctx!;
     const s = c.createBufferSource();
     s.buffer = this.noise;
+    s.loop = true;
     const f = c.createBiquadFilter();
     f.type = type;
     f.frequency.value = freq;
@@ -353,6 +354,20 @@ export class Sound {
     const t = this.now();
     [65, 69, 72, 77, 81, 84].forEach((m, i) => this.tone(mtof(m), t + i * 0.11, 0.7, 0.12, 'triangle', this.sfx, 0.4));
     [77, 81, 84, 89].forEach((m) => this.tone(mtof(m), t + 0.72, 1.8, 0.09, 'sine', this.sfx, 0.5));
+  }
+
+  thunder() {
+    if (!this.ctx) return;
+    const t = this.now();
+    this.hit(t, 0.3, 0.5, 1200, 'lowpass', this.sfx);
+    this.hit(t + 0.04, 2.0, 0.55, 240, 'lowpass', this.sfx);
+    const o = this.tone(58, t, 1.6, 0.45, 'sine', this.sfx, 0.3);
+    o.frequency.exponentialRampToValueAtTime(30, t + 1.5);
+  }
+
+  rain() {
+    if (!this.ctx) return;
+    this.hit(this.now(), 0.22, 0.016, 2600, 'bandpass', this.sfx);
   }
 
   dryer() {

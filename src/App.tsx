@@ -5,6 +5,7 @@ const EVENTS: Record<EventGame, { name: string; go: string }> = {
   cake: { name: '레오 생일 케이크 만들기', go: '케이크 만들러 가기' },
   trick: { name: '개인기 연습하기', go: '개인기 연습하러 가기' },
   sock: { name: '양말 물기', go: '양말 사냥하러 가기' },
+  rain: { name: '비오는 날', go: '레오 지켜주러 가기' },
 };
 
 const METERS: { key: keyof Stats; label: string; color: string }[] = [

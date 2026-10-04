@@ -10,9 +10,9 @@ export interface Stats {
   energy: number;
 }
 export type Action = 'feed' | 'treat' | 'ball' | 'mom' | 'walk' | 'bath' | 'vet' | 'sleep';
-type Mode = 'idle' | 'feed' | 'treat' | 'zoom' | 'ball' | 'mom' | 'sulk' | 'walk' | 'bath' | 'vet' | 'sleep' | 'angry' | 'cake' | 'trick' | 'sock';
-export type EventGame = 'cake' | 'trick' | 'sock';
-const GAMES: EventGame[] = ['cake', 'trick', 'sock'];
+type Mode = 'idle' | 'feed' | 'treat' | 'zoom' | 'ball' | 'mom' | 'sulk' | 'walk' | 'bath' | 'vet' | 'sleep' | 'angry' | 'cake' | 'trick' | 'sock' | 'rain';
+export type EventGame = 'cake' | 'trick' | 'sock' | 'rain';
+const GAMES: EventGame[] = ['cake', 'trick', 'sock', 'rain'];
 const SOCK_COLORS = ['#7fa8c9', '#ee8a8a', '#9dbf7a', '#f2c84b', '#b79ad6'];
 
 interface Part {
@@ -106,6 +106,7 @@ export class Game {
   /** 한 번이라도 플레이해서 다시하기가 열린 미니게임 */
   unlocked: EventGame[] = [];
   private kisses = 0;
+  private rain = { n: 0, miss: 0, cover: false, grip: 1, flash: 0, boomAt: 0, nextAt: 0, second: 0, shake: 0 };
   private trickN = 0;
   private looking = false;
   private patience = 0.6;
@@ -347,6 +348,15 @@ export class Game {
       this.sockDown(p);
       return;
     }
+    if (this.mode === 'rain') {
+      const r = this.rain;
+      if (this.sub === 1 && r.grip > 0.15 && Math.hypot(p.x - this.leo.x, p.y - (this.gy - 128 * LEO_SCALE)) < 78) {
+        r.cover = true;
+        this.sound.pop();
+        buzz(10);
+      }
+      return;
+    }
     if (this.mode === 'sleep') {
       // 자는데 깨우면 엄청 화내면서 물려고 한다
       this.rage('자는데 깨워서 엄청 화났어요. 물려요, 도망쳐요!', false);
@@ -408,7 +418,7 @@ export class Game {
     this.ptr.x = p.x;
     this.ptr.y = p.y;
 
-    if (this.mode === 'sock') return;
+    if (this.mode === 'sock' || this.mode === 'rain') return;
     if (this.mode === 'trick') return;
     if (this.mode === 'cake') {
       const ck = this.cake;
@@ -477,6 +487,10 @@ export class Game {
     const ptr = this.ptr;
     this.ptr = null;
     if (!ptr) return;
+    if (this.mode === 'rain') {
+      this.rain.cover = false;
+      return;
+    }
     if (this.mode === 'sock') return;
     if (this.mode === 'trick') {
       this.trickUp(ptr.y - ptr.sy);
@@ -776,6 +790,7 @@ export class Game {
     }
     if (game === 'cake') this.startCake();
     else if (game === 'trick') this.startTrick();
+    else if (game === 'rain') this.startRain();
     else this.startSock();
     return true;
   }
@@ -1072,6 +1087,188 @@ export class Game {
         '',
       ][this.sub] ?? '',
     );
+  }
+
+  // ---------- 이벤트 미니게임: 비오는 날 ----------
+  /** 번쩍한 뒤 천둥이 칠 때 레오 귀를 막아준다. 8번 중 3번 놀라면 재도전 */
+  private startRain() {
+    const leo = this.leo;
+    this.mode = 'rain';
+    this.barksLeft = 0;
+    leo.x = W / 2 - 20;
+    leo.dir = 1;
+    leo.targetX = null;
+    this.rainRound();
+  }
+
+  private rainRound() {
+    this.sub = 0;
+    this.modeT = 1.8;
+    this.rain = { n: 0, miss: 0, cover: false, grip: 1, flash: 0, boomAt: 0, nextAt: 0, second: 0, shake: 0 };
+  }
+
+  private boom() {
+    const r = this.rain;
+    const leo = this.leo;
+    const g = this.gy;
+    r.n++;
+    r.shake = 0.35;
+    this.sound.thunder();
+    this.say('콰광!', rand(80, W - 80), rand(238, 262), 36, '#3d3f5c');
+    if (r.cover) {
+      buzz(30);
+      leo.boop(0.4);
+      this.say('휴…', leo.x + 70, g - 150, 24, '#6b8f5a');
+      this.emit('heart', leo.x + rand(-20, 20), g - 190, rand(-20, 20), -70, 1.1);
+    } else {
+      r.miss++;
+      buzz(200);
+      leo.jump(-420);
+      leo.barkPose();
+      this.sound.yelp();
+      this.say('깨갱!', leo.x, g - 215, 32, '#b3261e');
+    }
+  }
+
+  private updateRain(dt: number) {
+    const r = this.rain;
+    const leo = this.leo;
+    leo.pant = false;
+    this.modeT -= dt;
+    this.tickT -= dt;
+    if (this.tickT <= 0) {
+      this.tickT = 0.16;
+      this.sound.rain();
+    }
+    if (r.flash > 0) r.flash -= dt;
+    if (r.shake > 0) r.shake -= dt;
+    if (this.sub === 0) {
+      leo.tremble = 0.25;
+      if (this.modeT <= 0) {
+        this.sub = 1;
+        r.nextAt = this.t + 1.2;
+      }
+      return;
+    }
+    if (this.sub === 2) {
+      if (this.modeT <= 0) {
+        if (r.miss < 3) this.endScene(`천둥 ${8 - r.miss}번 막아줬어요. 레오가 안심했어요`, { mood: 35 }, 0);
+        else this.rainRound();
+      }
+      return;
+    }
+    // 손 힘: 막고 있으면 빠지고, 다 빠지면 손이 풀린다
+    if (r.cover) {
+      r.grip -= dt / 1.25;
+      if (r.grip <= 0) {
+        r.grip = 0;
+        r.cover = false;
+        this.say('손에 힘이 풀렸다', leo.x, this.gy - 215, 22, INK);
+      }
+    } else {
+      r.grip = Math.min(1, r.grip + dt * 0.8);
+    }
+    leo.tremble = r.cover ? 0.15 : r.boomAt ? 1.2 : 0.3 + r.miss * 0.2;
+    leo.eye = r.cover ? 'squint' : 'open';
+    leo.tailAmp.target = 0.02;
+    leo.squash.target = r.cover ? 0.92 : 1;
+
+    if (r.boomAt && this.t >= r.boomAt) {
+      r.boomAt = 0;
+      this.boom();
+      // 가끔 연달아 한 번 더 친다
+      if (r.n >= 3 && r.n < 8 && Math.random() < 0.35) r.second = this.t + 0.55;
+      else r.nextAt = this.t + rand(1.3, 2.6);
+    } else if (r.second && this.t >= r.second) {
+      r.second = 0;
+      this.boom();
+      r.nextAt = this.t + rand(1.3, 2.6);
+    } else if (!r.boomAt && !r.second && r.nextAt && this.t >= r.nextAt && r.n < 8 && r.miss < 3) {
+      // 번쩍. 천둥은 조금 뒤에 오고, 갈수록 간격이 들쭉날쭉해진다
+      r.nextAt = 0;
+      r.flash = 0.3;
+      r.boomAt = this.t + rand(0.5, 1.5 - r.n * 0.05);
+    }
+    if (!r.boomAt && !r.second && (r.n >= 8 || r.miss >= 3)) {
+      this.sub = 2;
+      this.modeT = 2;
+      r.cover = false;
+      leo.squash.target = 1;
+      if (r.miss < 3) {
+        this.sound.fanfare();
+        leo.happy(2);
+        this.say('무사히 지나갔다!', W / 2, this.gy - 235, 32, '#6b8f5a');
+      } else {
+        this.sound.growl();
+        this.say('너무 놀랐어… 다시!', W / 2, this.gy - 235, 30, INK);
+      }
+    }
+  }
+
+  private drawRain() {
+    const ctx = this.ctx;
+    const c = this.crayon;
+    const r = this.rain;
+    const leo = this.leo;
+    const g = this.gy;
+    if (r.cover) {
+      // 귀를 막은 두 손
+      for (const sgn of [-1, 1])
+        c.blob(leo.x + sgn * 36 * LEO_SCALE, g - 150 * LEO_SCALE + (1 - leo.squash.x) * 60, 21, 17, { fill: '#f1c9a5', edge: '#b98a63', seed: 560 + sgn, rot: sgn * 0.5 });
+    }
+    // 어두운 방 + 빗줄기
+    ctx.save();
+    ctx.fillStyle = 'rgba(40, 46, 78, 0.3)';
+    ctx.fillRect(0, 0, W, this.H);
+    ctx.strokeStyle = 'rgba(205, 222, 240, 0.75)';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    const sx = r.shake > 0 ? Math.sin(this.t * 90) * 5 : 0;
+    for (let i = 0; i < 46; i++) {
+      const x = ((i * 67 + this.t * 140) % (W + 60)) - 30 + sx;
+      const y = ((i * 131 + this.t * 760) % (this.H - 150)) + 90;
+      ctx.moveTo(x, y);
+      ctx.lineTo(x - 6, y + 20);
+    }
+    ctx.stroke();
+    if (r.flash > 0) {
+      ctx.fillStyle = `rgba(255, 255, 240, ${Math.min(0.85, r.flash * 3.2)})`;
+      ctx.fillRect(0, 0, W, this.H);
+      // 번개
+      ctx.strokeStyle = '#f2c84b';
+      ctx.lineWidth = 5;
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(86, 215);
+      ctx.lineTo(70, 262);
+      ctx.lineTo(96, 258);
+      ctx.lineTo(78, 310);
+      ctx.stroke();
+    }
+    // 손 힘 게이지
+    if (this.sub === 1) {
+      ctx.lineWidth = 9;
+      ctx.strokeStyle = 'rgba(247, 241, 227, 0.55)';
+      ctx.beginPath();
+      ctx.moveTo(120, 180);
+      ctx.lineTo(300, 180);
+      ctx.stroke();
+      if (r.grip > 0.02) {
+        ctx.strokeStyle = r.grip < 0.3 ? '#d1483a' : '#9dbf7a';
+        ctx.beginPath();
+        ctx.moveTo(120, 180);
+        ctx.lineTo(120 + 180 * r.grip, 180);
+        ctx.stroke();
+      }
+      ctx.font = '700 18px Gaegu, "Comic Sans MS", cursive';
+      ctx.fillStyle = PAPER;
+      ctx.fillText('손 힘', 74, 186);
+    }
+    ctx.restore();
+    if (this.sub === 0) this.banner('천둥이 무서워…', 38);
+    else this.banner(`천둥 ${r.n}/8 · 놀람 ${r.miss}/3`, 30, r.miss >= 2 ? '#b3261e' : INK);
+    this.guide('번쩍하면 머리를 눌러 귀를 막아요');
   }
 
   // ---------- 이벤트 미니게임: 양말 물기 ----------
@@ -1642,6 +1839,10 @@ export class Game {
         this.updateSock(dt);
         break;
       }
+      case 'rain': {
+        this.updateRain(dt);
+        break;
+      }
       case 'idle': {
         if (this.pendingEvent && leo.jumpY === 0) {
           this.pendingEvent = false;
@@ -2171,7 +2372,7 @@ export class Game {
       ctx.restore();
     }
 
-    for (const x of ['walk', 'vet', 'cake', 'trick', 'sock'].includes(this.mode) ? [] : this.poops) {
+    for (const x of ['walk', 'vet', 'cake', 'trick', 'sock', 'rain'].includes(this.mode) ? [] : this.poops) {
       c.blob(x, g - 6, 15, 7, { fill: '#8a5a33', edge: '#5e3b1e', seed: 200 });
       c.blob(x, g - 15, 10.5, 6, { fill: '#8a5a33', edge: '#5e3b1e', seed: 201 });
       c.blob(x + 1, g - 23, 5.5, 4.5, { fill: '#8a5a33', edge: '#5e3b1e', seed: 202 });
@@ -2217,6 +2418,7 @@ export class Game {
     if (this.mode === 'cake') this.drawCake();
     if (this.mode === 'trick') this.drawTrick();
     if (this.mode === 'sock') this.drawSockGame();
+    if (this.mode === 'rain') this.drawRain();
 
     const tr = this.treat;
     if (tr) {
